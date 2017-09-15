@@ -1,0 +1,710 @@
+---
+title: "Simulatons HW3"
+author: "Adil Hayat"
+date: "6 April 2017"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(OptionPricing)
+```
+
+# Initial parameters
+```{r}
+sampl_size <- 1000
+S0 <- 100
+Time <- 1
+r <- 0.05
+sigma <- 0.1
+div <- 0
+intervals <- 52
+deltaTime <- Time/intervals
+strikes <- c(100)
+set.seed(0)
+```
+
+## Question 1(a)
+## Monte Carlo Simulation
+```{r}
+comp_df <- data.frame(matrix(nrow = 2,ncol=1))
+colnames(comp_df) <- c("Variable")
+comp_df$Variable <- c("Call Price","Std. Error")
+
+stockPrice <- numeric()
+savg <- numeric()
+
+for(i in 1:sampl_size){
+  stockPrice[1] <- S0*exp((r-0.5*sigma^2)*deltaTime+sigma*rnorm(1)*sqrt(deltaTime))   
+  for(k in 2:intervals){
+   stockPrice[k] = stockPrice[k-1]*exp((r-0.5*sigma^2)*deltaTime+sigma*rnorm(1)*
+                                         sqrt(deltaTime))   
+  }
+  savg[i] <- mean(stockPrice)   
+}
+
+terminal_prices <- list()
+call_price <- numeric()
+se_call <- numeric()
+thr_call_price <- numeric()
+for (strike in strikes){
+  terminal_prices[[toString(strike)]] <- exp(-1*r*Time)*ifelse(savg - strike > 0,
+                                                             savg - strike, 0)  
+  call_price[toString(strike)] <- mean(terminal_prices[[toString(strike)]])
+  se_call[toString(strike)] <- sqrt(sum((terminal_prices[[toString(strike)]]-
+                               call_price[toString(strike)])^2)/(sampl_size*(sampl_size-1)))
+}
+
+
+comp_df$MonteCarlo[1] <- as.double(call_price[toString(strike)])
+comp_df$MonteCarlo[2] <- as.double(se_call[toString(strike)])
+
+cat("Call Prices and Standard Errors\n")
+cat("Call Price: ", as.double(call_price[toString(strike)]), "\n")
+cat("Standard Error: ", as.double(se_call[toString(strike)]))
+```
+## Question 1(b)
+## Monte Carlo with Antithetic variables
+```{r}
+stockPrice1 <- numeric()
+stockPrice2 <- numeric()
+savg <- numeric()
+
+i <- 1
+while(i <= 2*sampl_size){
+      rand <- rnorm(1)
+      stockPrice1[1] <- S0*exp((r-0.5*sigma^2)*deltaTime+sigma*rand*sqrt(deltaTime))
+      stockPrice2[1] <- S0*exp((r-0.5*sigma^2)*deltaTime+sigma*-rand*sqrt(deltaTime))
+      for(k in 2:intervals){
+        rand <- rnorm(1)
+        stockPrice1[k] <- stockPrice1[k-1]*exp((r-0.5*sigma^2)*deltaTime+sigma*
+                                             rand*sqrt(deltaTime))
+        stockPrice2[k] <- stockPrice2[k-1]*exp((r-0.5*sigma^2)*deltaTime+sigma*-1*
+                                             rand*sqrt(deltaTime))   
+      }
+    savg[i] = mean(stockPrice1)
+    savg[i+1] = mean(stockPrice2)
+    i = i + 2  
+}
+
+terminal_prices <- list()
+call_price <- numeric()
+se_call <- numeric()
+thr_call_price <- numeric()
+for (strike in strikes){
+  terminal_prices[[toString(strike)]] <- exp(-1*r*Time)*ifelse(savg - strike > 0,
+                                                               savg - strike, 0)
+  # pair up the call prices
+  terminal_prices[[toString(strike)]] <- (terminal_prices[[toString(strike)]]
+                      [seq(1,2*sampl_size,by = 2)] + terminal_prices[[toString(strike)]]
+                      [seq(2,2*sampl_size, by = 2)])/2 
+  call_price[toString(strike)] <- mean(terminal_prices[[toString(strike)]])
+  se_call[toString(strike)] <- sqrt(sum((terminal_prices[[toString(strike)]]-
+                            call_price[toString(strike)])^2)/(sampl_size*(sampl_size-1)))
+}
+
+comp_df$Antithetic[1] <- as.double(call_price[toString(strike)])
+comp_df$Antithetic[2] <- as.double(se_call[toString(strike)])
+
+cat("Call Prices and Standard Errors\n")
+cat("Call Price: ", as.double(call_price[toString(strike)]), "\n")
+cat("Standard Error: ", as.double(se_call[toString(strike)]))
+```
+## Question 1(c)
+## Final Price as control variable
+```{r}
+stockPrice <- numeric()
+savg <- numeric()
+sexp <- numeric()
+
+for(i in 1:sampl_size){
+  stockPrice[1] <- S0*exp((r-0.5*sigma^2)*deltaTime+sigma*rnorm(1)*sqrt(deltaTime))   
+  for(k in 2:intervals){
+   stockPrice[k] = stockPrice[k-1]*exp((r-0.5*sigma^2)*deltaTime+sigma*rnorm(1)*
+                                         sqrt(deltaTime))   
+  }
+  savg[i] <- mean(stockPrice) 
+  sexp[i] <- stockPrice[intervals]
+}
+
+strike <- strikes[1]
+
+sim_opt_price <- exp(-1*r*Time)*ifelse(savg - strike > 0, savg - strike, 0)  
+
+aEst <- -1*cov(sexp, sim_opt_price)/var(sexp)
+
+call_prices <- sim_opt_price + aEst*(sexp-S0*exp(r*Time))
+call_price <- mean(call_prices)
+
+se_call <- sqrt(sum((call_prices - call_price)^2)/(sampl_size*(sampl_size-1)))
+
+comp_df$FinalPriceAsCtrl[1] <- call_price
+comp_df$FinalPriceAsCtrl[2] <- se_call
+
+cat("Call Prices and Standard Errors\n")
+cat("Call Price: ", call_price, "\n")
+cat("Standard Error: ", se_call)
+```
+
+## Question 1(d)
+## Geometric Asian option as control variable 
+```{r}
+stockPrice <- numeric()
+savg <- numeric()
+sGeomAvg <- numeric()
+
+for(i in 1:sampl_size){
+  stockPrice[1] <- S0*exp((r-0.5*sigma^2)*deltaTime+sigma*rnorm(1)*sqrt(deltaTime))   
+  for(k in 2:intervals){
+   stockPrice[k] = stockPrice[k-1]*exp((r-0.5*sigma^2)*deltaTime+sigma*rnorm(1)*
+                   sqrt(deltaTime))   
+  }
+  savg[i] <- mean(stockPrice) 
+  sGeomAvg[i] <- exp(mean(log(stockPrice))) # geometric mean
+  }
+
+strike <- strikes[1]
+
+sim_opt_price <- exp(-1*r*Time)*ifelse(savg - strike > 0,savg - strike, 0)  
+geom_opt_price <- exp(-1*r*Time)*ifelse(sGeomAvg - strike > 0,savg - strike, 0)  
+
+aEst <- -1*cov(geom_opt_price, sim_opt_price)/var(geom_opt_price)
+
+# calcuate the geometric option price
+
+new_sigma <- sigma/sqrt(3)
+div_new <- 0.5*(r + div + sigma^2/6)
+d1 <- (log(S0/strike) + (r - div_new + 0.5*new_sigma^2)*Time)/new_sigma*sqrt(Time)
+d2 <- d1 -  new_sigma*sqrt(Time)
+th_geom_opt_price <- S0*exp(-1*div_new*Time)*pnorm(d1) - strike*exp(-1*(r)*Time)*
+                    pnorm(d2)
+
+call_prices <- sim_opt_price + aEst*(geom_opt_price-th_geom_opt_price)
+call_price <- mean(call_prices)
+  
+se_call <- sqrt(sum((call_prices - call_price)^2)/(sampl_size*(sampl_size-1)))
+
+comp_df$GeomAsianContTimeAsCtrl[1] <- call_price
+comp_df$GeomAsianContTimeAsCtrl[2] <- se_call
+
+cat("Call Prices and Standard Errors\n")
+cat("Call Price: ", call_price, "\n")
+cat("Standard Error: ", se_call)
+```
+
+## Question 1(e)
+## Exact Price of Geometric option as control variable
+```{r}
+stockPrice <- numeric()
+savg <- numeric()
+sGeomAvg <- numeric()
+
+for(i in 1:sampl_size){
+  stockPrice[1] <- S0*exp((r-0.5*sigma^2)*deltaTime+sigma*rnorm(1)*sqrt(deltaTime))   
+  for(k in 2:intervals){
+   stockPrice[k] = stockPrice[k-1]*exp((r-0.5*sigma^2)*deltaTime+sigma*rnorm(1)*sqrt(deltaTime))   
+  }
+  savg[i] <- mean(stockPrice) 
+  sGeomAvg[i] <- exp(mean(log(stockPrice))) # geometric mean
+  }
+
+strike <- strikes[1]
+
+sim_opt_price <- exp(-1*r*Time)*ifelse(savg - strike > 0,savg - strike, 0)  
+geom_opt_price <- exp(-1*r*Time)*ifelse(sGeomAvg - strike > 0,savg - strike, 0)  
+
+aEst <- -1*cov(geom_opt_price, sim_opt_price)/var(geom_opt_price)
+
+# calcuate the geometric option price
+
+new_sigma <- sigma*sqrt((intervals+1)*(2*intervals+1)/(6*intervals^2))
+div_new <- r*((intervals-1)/(2*intervals)) + div*((intervals+1)/(2*intervals)) + 
+           sigma^2*(intervals+1)*(intervals-1)/(6*intervals^2)
+d1 <- (log(S0/strike) + (r - div_new + 0.5*new_sigma^2)*Time)/new_sigma*sqrt(Time)
+d2 <- d1 -  new_sigma*sqrt(Time)
+th_geom_opt_price <- S0*exp(-1*div_new*Time)*pnorm(d1) - strike*exp(-1*(r)*Time)*pnorm(d2)
+
+call_prices <- sim_opt_price + aEst*(geom_opt_price-th_geom_opt_price)
+call_price <- mean(call_prices)
+  
+se_call <- sqrt(sum((call_prices - call_price)^2)/(sampl_size*(sampl_size-1)))
+
+comp_df$GeomAsianDiscTimeAsCtrl[1] <- call_price
+comp_df$GeomAsianDiscTimeAsCtrl[2] <- se_call
+
+cat("Call Prices and Standard Errors\n")
+cat("Call Price: ", call_price, "\n")
+cat("Standard Error: ", se_call)
+```
+
+```{r}
+print(comp_df)
+```
+
+## Comment on Effectiveness of various variance reduction techniques
+As compared to standard Monte Carlo, we observe that the using Antithetic variable reduces the standard error by almost half and we achieve similar performance with using something as simple as the final stock price as the control varible. However, significant gains come from using Geometic Asian Option as the control variable as the correlation with the Asian option is almost -1. Switching from the continuous to discrete time version for pricing Geometric Asian Option there doesn't lead to a much change in the standard error.
+
+## Question 2(a)
+# Standard Monte Carlo approach
+```{r}
+comp_df2 <- data.frame(matrix(nrow = 6,ncol=1))
+colnames(comp_df2) <- c("Variable")
+comp_df2$Variable <- c("Call Price_120","Std Error_120", "Call Price_140", 
+                       "Std Error_140", "Call Price_160", "Std Error_160")
+
+sampl_size <- 10000
+sigma <- 0.2
+strikes <- c(120,140,160)
+stockPrice <- numeric()
+sexp <- numeric()
+
+for(i in 1:sampl_size){
+  stockPrice[1] <- S0*exp((r-0.5*sigma^2)*deltaTime+sigma*rnorm(1)*sqrt(deltaTime))   
+  for(k in 2:intervals){
+   stockPrice[k] = stockPrice[k-1]*exp((r-0.5*sigma^2)*deltaTime+sigma*rnorm(1)*sqrt(deltaTime))   
+  }
+  sexp[i] <- stockPrice[intervals]
+}
+
+terminal_prices <- list()
+call_price <- numeric()
+se_call <- numeric()
+thr_call_price <- numeric()
+
+for (strike in strikes){
+  terminal_prices[[toString(strike)]] <- exp(-1*r*Time)*ifelse(sexp - strike > 0,
+                                                             sexp - strike, 0)  
+  call_price[toString(strike)] <- mean(terminal_prices[[toString(strike)]])
+  se_call[toString(strike)] <- sqrt(sum((terminal_prices[[toString(strike)]]-
+                               call_price[toString(strike)])^2)/(sampl_size*(sampl_size-1)))
+}
+
+for(i in 1:length(strikes)){
+  comp_df2$MonteCarlo[(i-1)*2 +1] <- as.double(call_price[i])
+  comp_df2$MonteCarlo[(i-1)*2 +2] <- as.double(se_call[i])
+}
+
+
+cat("Call Prices and Standard Errors\n")
+print(call_price)
+print(se_call)
+```
+
+## Question 2(b)
+## Monte carlo using Put Prices
+```{r}
+stockPrice <- numeric()
+sexp <- numeric()
+
+for(i in 1:sampl_size){
+  stockPrice[1] <- S0*exp((r-0.5*sigma^2)*deltaTime+sigma*rnorm(1)*sqrt(deltaTime))   
+  for(k in 2:intervals){
+   stockPrice[k] = stockPrice[k-1]*exp((r-0.5*sigma^2)*deltaTime+sigma*rnorm(1)*
+                   sqrt(deltaTime))   
+  }
+  sexp[i] <- stockPrice[intervals]
+}
+
+terminal_prices <- list()
+put_price <- numeric()
+call_price <- numeric()
+se_call <- numeric()
+thr_call_price <- numeric()
+
+for (strike in strikes){
+  terminal_prices[[toString(strike)]] <- exp(-1*r*Time)*ifelse( strike - sexp > 0,
+                                                             strike - sexp, 0)  
+  put_price[toString(strike)] <- mean(terminal_prices[[toString(strike)]])
+  call_price[toString(strike)] <- put_price[toString(strike)] + S0 - strike*exp(-1*r*Time)
+  se_call[toString(strike)] <- sqrt(sum((terminal_prices[[toString(strike)]]-
+                               call_price[toString(strike)])^2)/(sampl_size*(sampl_size-1)))
+}
+
+
+for(i in 1:length(strikes)){
+  comp_df2$PutCallParity[(i-1)*2 +1] <- as.double(call_price[i])
+  comp_df2$PutCallParity[(i-1)*2 +2] <- as.double(se_call[i])
+}
+
+cat("Call Prices and Standard Errors\n")
+print(call_price)
+print(se_call)
+```
+
+## Question 2(c)
+## Using Final Stock Price as the control variable
+```{r}
+stockPrice <- numeric()
+savg <- numeric()
+sexp <- numeric()
+
+for(i in 1:sampl_size){
+  stockPrice[1] <- S0*exp((r-0.5*sigma^2)*deltaTime+sigma*rnorm(1)*sqrt(deltaTime))   
+  for(k in 2:intervals){
+   stockPrice[k] = stockPrice[k-1]*exp((r-0.5*sigma^2)*deltaTime+sigma*rnorm(1)*
+                   sqrt(deltaTime))   
+  }
+  sexp[i] <- stockPrice[intervals]
+}
+
+terminal_pricesP <- list()
+terminal_prices <- list()
+
+for(strike in strikes){
+  terminal_pricesP[[toString(strike)]] <- exp(-1*r*Time)*ifelse(strike - sexp > 0,
+                                                             strike - sexp, 0)  
+  aEst <- -1*cov(sexp, terminal_pricesP[[toString(strike)]])/var(sexp)
+  terminal_prices[[toString(strike)]] <- terminal_pricesP[[toString(strike)]] + aEst*
+                                          (sexp-S0*exp(r*Time))
+  put_price[toString(strike)] <- mean(terminal_prices[[toString(strike)]])
+  call_price[toString(strike)] <- put_price[toString(strike)] + S0 - strike*exp(-1*r*Time)
+  se_call[toString(strike)] <- sqrt(sum((terminal_prices[[toString(strike)]]-
+                               put_price[toString(strike)])^2)/(sampl_size*(sampl_size-1)))
+}
+
+for(i in 1:length(strikes)){
+  comp_df2$FinalPriceAsCtrl[(i-1)*2 +1] <- as.double(call_price[i])
+  comp_df2$FinalPriceAsCtrl[(i-1)*2 +2] <- as.double(se_call[i])
+}
+
+
+cat("Call Prices and Standard Errors\n")
+print(call_price)
+print(se_call)
+```
+
+## Question 2(d)
+## Using Importance Sampling
+```{r, cache=TRUE}
+for(strike in strikes){
+  # simulate the stock option prices
+  unifs <- runif(sampl_size)
+  L <- (log(strike/S0) - (r - 0.5*sigma^2)*Time)/sigma*sqrt(Time)
+  cdn_nrml <- qnorm(unifs*(1-pnorm(L)) + pnorm(L))
+  sexp <- S0*exp((r-0.5*sigma^2)*Time+sigma*cdn_nrml*sqrt(Time))   
+  
+  # calculate the payoffs
+  terminal_prices[[toString(strike)]] <- exp(-1*r*Time)*ifelse(sexp - strike > 0,
+                                                             sexp - strike, 0)*(1-pnorm(L))  
+  call_price[toString(strike)] <- mean(terminal_prices[[toString(strike)]])
+  se_call[toString(strike)] <- sqrt(sum((terminal_prices[[toString(strike)]]-
+                               call_price[toString(strike)])^2)/(sampl_size*(sampl_size-1)))
+  }
+
+for(i in 1:length(strikes)){
+  comp_df2$ImpSampling[(i-1)*2 +1] <- as.double(call_price[i])
+  comp_df2$ImpSampling[(i-1)*2 +2] <- as.double(se_call[i])
+}
+
+cat("Call Prices and Standard Errors\n")
+print(call_price)
+print(se_call)
+```
+
+```{r}
+print(comp_df2)
+```
+
+## Comment on Effectiveness of Importance Sampling
+We observe that importance sampling reduces the standard errors quite significantly as compared to the standard monte carlo and put-call parity method.
+We also observe that the call option price obtained using the put-call parity is higher than standard monte carlo as more paths end up being below the strike. Also, the standard errors are higher in the case of pricing using put-call parity with final price being used as control for put price..
+
+
+## Question 3(a)
+## Standard Monte carlo
+```{r, cache=TRUE}
+sampl_size <- 100000
+S0 <- 95
+intervals <- 50
+Time <- 0.25
+sigma <- 0.15
+deltaTime <- Time/intervals
+str_bar <- data.frame(H=c(94,90,85,90), K= c(96,96,96,106))
+
+stockPrice <- numeric()
+barr_crossed <- numeric()
+terminal_prices <- data.frame(matrix(ncol = 4, nrow = sampl_size))
+colnames(terminal_prices) <- paste(str_bar$H, str_bar$K, sep="_")
+  
+for(i in 1:sampl_size){
+  stockPrice[1] <- S0*exp((r-0.5*sigma^2)*deltaTime+sigma*rnorm(1)*sqrt(deltaTime))   
+  for(k in 2:intervals){
+   stockPrice[k] = stockPrice[k-1]*exp((r-0.5*sigma^2)*deltaTime+sigma*rnorm(1)*
+                                         sqrt(deltaTime))   
+  }
+  sexp <- stockPrice[intervals]
+  
+  for(j in 1:nrow(str_bar)){
+    barrier <- str_bar$H[j]
+    strike <- str_bar$K[j]
+    barr_crossed <- ifelse(min(stockPrice) < barrier , 1, 0)
+    colname <- paste(barrier, strike, sep = "_")
+    terminal_prices[[colname]][i] <- barr_crossed*exp(-1*r*Time)*ifelse(sexp - strike > 0,
+                                                             1, 0)
+  }
+}
+
+str_bar$opt_price <- 0
+str_bar$se_opt <- 0
+str_bar$var_opt <- 0
+for(i in 1:nrow(str_bar)){
+  barrier <- str_bar$H[i]
+  strike <- str_bar$K[i]
+  colname <- paste(barrier, strike, sep = "_")
+  str_bar$opt_price[i] <- mean(terminal_prices[[colname]])
+  str_bar$se_opt[i] <- sqrt(sum((terminal_prices[[colname]]- str_bar$opt_price[i])^2)/
+                              (sampl_size*(sampl_size-1)))
+  str_bar$var_opt[i] <- str_bar$se_opt[i]^2
+}
+
+print(str_bar)
+```
+
+## Question 3(b)(ii)
+## Conditional Monte Carlo
+```{r, cache=TRUE}
+sampl_size <- 100000
+str_barCMC <- data.frame(H=c(94,90,85,90), K= c(96,96,96,106))
+stockPrice <- numeric()
+barr_crossed <- numeric()
+terminal_prices <- data.frame(matrix(ncol = 4, nrow = sampl_size))
+colnames(terminal_prices) <- paste(str_bar$H, str_bar$K, sep="_")
+  
+for(i in 1:sampl_size){
+  stockPrice[1] <- S0*exp((r-0.5*sigma^2)*deltaTime+sigma*rnorm(1)*sqrt(deltaTime))   
+  for(k in 2:intervals){
+   stockPrice[k] = stockPrice[k-1]*exp((r-0.5*sigma^2)*deltaTime+sigma*rnorm(1)*
+                   sqrt(deltaTime))
+  }
+  sexp <- stockPrice[intervals]
+  
+  for(j in 1:nrow(str_bar)){
+    barrier <- str_bar$H[j]
+    strike <- str_bar$K[j]
+    colname <- paste(barrier, strike, sep = "_")
+    barr_crossed <- ifelse(min(stockPrice) < barrier , 1, 0)
+    opt_price <- 0
+    if(barr_crossed){
+      index <- which(stockPrice < barrier)[1]
+      barr_crossingTime <- deltaTime*index
+      timeRemaining <- Time - barr_crossingTime
+      nd2 <- pnorm((log(stockPrice[index]/strike)+(r-0.5*sigma^2)*timeRemaining)/
+                     (sigma*sqrt(timeRemaining)))
+      dig_payoff <- exp(-1*r*timeRemaining)*nd2
+      opt_price <- exp(-1*r*barr_crossingTime)*dig_payoff
+    }
+    terminal_prices[[colname]][i] <- barr_crossed*opt_price
+  }
+}
+
+str_barCMC$opt_price <- 0
+str_barCMC$se_opt <- 0
+str_barCMC$var_opt <- 0
+for(i in 1:nrow(str_barCMC)){
+  barrier <- str_barCMC$H[i]
+  strike <- str_barCMC$K[i]
+  colname <- paste(barrier, strike, sep = "_")
+  str_barCMC$opt_price[i] <- mean(terminal_prices[[colname]])
+  str_barCMC$se_opt[i] <- sqrt(sum((terminal_prices[[colname]]- str_barCMC$opt_price[i])^2)/
+                                 (sampl_size*(sampl_size-1)))
+  str_barCMC$var_opt[i] <- str_barCMC$se_opt[i]^2
+}
+
+print(str_barCMC)
+```
+
+## Question 3(b)(iii)
+## Variance ratios calculation
+```{r}
+mer_tab <- merge(str_bar, str_barCMC, by = c("H","K"))
+names(mer_tab)[3:ncol(mer_tab)] <- c("MC_Opt_Price", "MC_SE", "MC_var", "CMC_Opt_Price",
+                                     "CMC_SE", "CMC_var")
+mer_tab$varRatio <- mer_tab$MC_var/mer_tab$CMC_var
+print(mer_tab)
+```
+
+## Question 4(a)
+## Monte Carlo Simulations
+```{r, cache=TRUE}
+sampl_size <- 100000
+num_intervals <- c(25,50)
+S0 <- 100
+strike <- 100
+barrier <- 95
+r <- 0.1
+sigma <- 0.3
+Time <- 0.2
+
+terminal_prices <- data.frame(matrix(ncol = 2, nrow = sampl_size))
+colnames(terminal_prices) <- c(num_intervals)
+
+price_df <- data.frame(matrix(ncol = 1, nrow = 2))
+colnames(price_df) <- c("N")
+price_df$N <- num_intervals
+
+comp_df <- data.frame(matrix(ncol = 1, nrow = 2))
+colnames(comp_df) <- c("N")
+comp_df$N <- num_intervals
+
+for(intervals in num_intervals){
+  stockPrice <- numeric()
+  deltaTime <- Time/intervals
+  for(i in 1:sampl_size){
+    stockPrice[1] <- S0*exp((r-0.5*sigma^2)*deltaTime+sigma*rnorm(1)*sqrt(deltaTime))   
+    for(k in 2:intervals){
+      stockPrice[k] = stockPrice[k-1]*exp((r-0.5*sigma^2)*deltaTime+sigma*rnorm(1)*
+                                            sqrt(deltaTime))   
+    }
+    sexp <- stockPrice[intervals]
+  
+    colname <- toString(intervals)
+    barr_crossed <- ifelse(min(stockPrice) < barrier , 1, 0)
+    terminal_prices[[colname]][i] <- barr_crossed*exp(-1*r*Time)*ifelse(sexp - strike > 0,
+                                                             sexp - strike, 0)
+  }
+}
+ 
+price_df$opt_price <- 0
+price_df$se_opt <- 0
+price_df$var_opt <- 0
+for(i in 1:nrow(price_df)){
+  colname <- toString(price_df$N[i])
+  price_df$opt_price[i] <- mean(terminal_prices[[colname]])
+  price_df$se_opt[i] <- sqrt(sum((terminal_prices[[colname]]- price_df$opt_price[i])^2)/
+                               (sampl_size*(sampl_size-1)))
+  price_df$var_opt[i] <- price_df$se_opt[i]^2
+}
+
+lam <- (r-div+0.5*sigma^2)/sigma^2
+y <- log((barrier^2)/(S0*strike))/(sigma*sqrt(Time)) + lam*sigma*sqrt(Time)
+th_opt_price <- S0*exp(-div*Time)*(barrier/S0)^(2*lam)*pnorm(y)- strike*exp(-1*r*Time)*
+                (barrier/S0)^(2*lam-2)*pnorm(y-sigma*sqrt(Time))
+price_df$theoretical_price <- th_opt_price
+var_MC <- price_df$var_opt
+print(price_df)
+```
+
+## Question 4(b)
+## Conditional Monte Carlo
+```{r, cache=TRUE}
+price_df <- data.frame(matrix(ncol = 1, nrow = 2))
+colnames(price_df) <- c("N")
+price_df$N <- num_intervals
+
+for(intervals in num_intervals){
+  stockPrice <- numeric()
+  deltaTime <- Time/intervals
+  for(i in 1:sampl_size){
+    stockPrice[1] <- S0*exp((r-0.5*sigma^2)*deltaTime+sigma*rnorm(1)*sqrt(deltaTime))   
+    for(k in 2:intervals){
+      stockPrice[k] = stockPrice[k-1]*exp((r-0.5*sigma^2)*deltaTime+sigma*rnorm(1)*
+                      sqrt(deltaTime))   
+    }
+    sexp <- stockPrice[intervals]
+  
+    colname <- toString(intervals)
+    barr_crossed <- ifelse(min(stockPrice) < barrier , 1, 0)
+    opt_price <- 0
+    if(barr_crossed){
+      index <- which(stockPrice < barrier)[1]
+      barr_crossingTime <- deltaTime*index
+      timeRemaining <- Time - barr_crossingTime
+      d1 <- (log(stockPrice[index]/strike)+(r-0.5*sigma^2)*timeRemaining)/
+        (sigma*sqrt(timeRemaining))
+      d2 <- d1 - sigma*sqrt(timeRemaining)
+      call_payoff <- stockPrice[index]*pnorm(d1) - strike*exp(-1*r*timeRemaining)*pnorm(d2)
+      opt_price <- exp(-1*r*barr_crossingTime)*call_payoff
+    }
+    terminal_prices[[colname]][i] <- barr_crossed*opt_price
+  }
+}
+ 
+price_df$opt_price <- 0
+price_df$se_opt <- 0
+price_df$var_opt <- 0
+for(i in 1:nrow(price_df)){
+  colname <- toString(price_df$N[i])
+  price_df$opt_price[i] <- mean(terminal_prices[[colname]])
+  price_df$se_opt[i] <- sqrt(sum((terminal_prices[[colname]]- price_df$opt_price[i])^2)/
+                               (sampl_size*(sampl_size-1)))
+  price_df$var_opt[i] <- price_df$se_opt[i]^2
+}
+
+lam <- (r-div+0.5*sigma^2)/sigma^2
+y <- log((barrier^2)/(S0*strike))/(sigma*sqrt(Time)) + lam*sigma*sqrt(Time)
+th_opt_price <- S0*exp(-div*Time)*(barrier/S0)^(2*lam)*pnorm(y)- strike*exp(-1*r*Time)*
+                (barrier/S0)^(2*lam-2)*pnorm(y-sigma*sqrt(Time))
+
+price_df$varRatio <- var_MC/price_df$var_opt
+price_df$theoretical_price <- th_opt_price
+
+print(price_df)
+```
+
+## Question 4(c)
+## Importance Sampling with Conditional Monte Carlo
+```{r, cache=TRUE}
+thetas <- c(-0.45,-0.30)
+
+terminal_prices <- data.frame(matrix(ncol = 2, nrow = sampl_size))
+colnames(terminal_prices) <- c(num_intervals)
+
+price_df <- data.frame(matrix(ncol = 2, nrow = 2))
+colnames(price_df) <- c("N","theta")
+price_df$N <- num_intervals
+price_df$theta <- thetas
+
+for(j in 1:nrow(price_df)){
+  stockPrice <- numeric()
+  intervals <- price_df$N[j]
+  deltaTime <- Time/intervals
+  shift <- price_df$theta[j]
+  for(i in 1:sampl_size){
+    normals <- numeric()
+    normals[1] <- rnorm(1,mean = shift,sd = 1)
+    stockPrice[1] <- S0*exp((r-0.5*sigma^2)*deltaTime+sigma*normals[1]*sqrt(deltaTime))   
+    for(k in 2:intervals){
+      normals[k] <- rnorm(1,mean = shift,sd = 1)
+      stockPrice[k] = stockPrice[k-1]*exp((r-0.5*sigma^2)*deltaTime+sigma*normals[k]*
+                                            sqrt(deltaTime))   
+    }
+    sexp <- stockPrice[intervals]
+  
+    colname <- toString(intervals)
+    barr_crossed <- ifelse(min(stockPrice) < barrier , 1, 0)
+    opt_price <- 0
+    if(barr_crossed){
+      index <- which(stockPrice < barrier)[1]
+      barr_crossingTime <- deltaTime*index
+      timeRemaining <- Time - barr_crossingTime
+      RNmult <- exp(-1*shift*sum(normals[1:index]) + 0.5*index*shift^2)
+      d1 <- (log(stockPrice[index]/strike)+(r-0.5*sigma^2)*timeRemaining)/
+            (sigma*sqrt(timeRemaining))
+      d2 <- d1 - sigma*sqrt(timeRemaining)
+      call_payoff <- stockPrice[index]*pnorm(d1) - strike*exp(-1*r*timeRemaining)*pnorm(d2)
+      opt_price <- exp(-1*r*barr_crossingTime)*call_payoff*RNmult
+    }
+    terminal_prices[[colname]][i] <- barr_crossed*opt_price
+  }
+}
+ 
+price_df$opt_price <- 0
+price_df$se_opt <- 0
+price_df$var_opt <- 0
+for(i in 1:nrow(price_df)){
+  colname <- toString(price_df$N[i])
+  price_df$opt_price[i] <- mean(terminal_prices[[colname]])
+  price_df$se_opt[i] <- sqrt(sum((terminal_prices[[colname]]- price_df$opt_price[i])^2)/
+                               (sampl_size*(sampl_size-1)))
+  price_df$var_opt[i] <- price_df$se_opt[i]^2
+}
+
+price_df$varRatio <- var_MC/price_df$var_opt
+price_df$theoretical_price <- th_opt_price
+print(price_df)
+```
+
+The price from the continuous case is higher than in the discrete cases because the probability of crossing the barrier is higher as there are no jumps in prices. 
+We observe that the Importance sampling with Conditional Monte Carlo leads to a higher reduction in the variance as compared to just using Conditional Monte Carlo.

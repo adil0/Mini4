@@ -1,0 +1,322 @@
+---
+title: "Simulations HW2"
+author: "Adil Hayat"
+date: "29 March 2017"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(Matrix)
+library(OptionPricing)
+```
+
+## Question 2(a)
+```{r}
+Func <- function(x){
+  return(exp(-0.5*(x-1)^2))
+}
+
+samp_sizes <- c(100, 1000, 10000)
+for(samp_size in samp_sizes){
+  X = rep(0, samp_size)
+  I = rep(0, samp_size)
+  for (j in 1:samp_size)
+  {
+    while (I[j] == 0)
+    {
+      S = sign(runif(1)-0.5)
+      u = runif(2)
+      y = Func(-log(u[1]))
+      if(u[2] <= y){
+        X[j] = S*(-log(u[1]))
+        I[j] = 1
+      }
+    }
+  }
+  
+  qqnorm(X, pch=20, main = paste("Normal Q-Q plot with Rejection Algorithm with n=",
+                                 samp_size))
+  abline(0,1,col="red")
+}
+```
+
+As observed in the case of previous algorithms, an **n** is increased, the generated sample matches the theoretical normal distribution very closely(n=1000 and 10000). So, Rejection Algorithm does a good job.   
+
+## Question 2(b)
+```{r}
+lam1 <- 0
+lam2 <- 0.1975
+lam3 <- 0.1349
+lam4 <- 0.1349
+
+lamFunc <- function(x){
+  ret_val <- lam1 + (x^lam3 - (1-x)^lam4)/lam2
+  return(ret_val)
+}
+
+for(samp_size in samp_sizes){
+  X <- lamFunc(runif(samp_size))
+
+  qqnorm(X, pch=20, main = paste("Normal Q-Q plot with Lambda Distribution with n=",
+                                 samp_size))
+  abline(0,1,col="red")
+}
+```
+
+The lambda distribution(with the given parameters) is similar to a theoretical Normal distribution as the sample size increases. (n=1000 and 10000)  
+
+## Question 2(c)
+```{r}
+w1 <- 0.6
+w2 <- 1.98
+p <- 0.82
+samp_sizes <- c(100, 1000, 10000)
+for(samp_size in samp_sizes){
+  y <- runif(samp_size)
+  z <- rnorm(samp_size)
+
+  X <- ifelse(y<=p, w1*z, w2*z)
+  qqnorm(X, pch=20, main = paste("Normal Q-Q plot with Litterman Winkelmann with n=",
+                                 samp_size))
+  abline(0,1,col="red")
+}
+```
+
+The Litterman Winkelmann weighted normal distribution has a very heavy tail as compared to a normal distribution.
+Also, we observe that the distribution has higher cumulative density in the left half of the distibution while having a lower value in the right half for the points lying in the body of the distribution as compared to a normal distribution.
+
+## Question 3(a)
+```{r}
+sampl_size <- 1000
+rhos <- c(0, 0.4,0.8)
+X1 <- numeric()
+X2 <- numeric()
+for(rho in rhos){
+  sigma <- matrix(c(1,rho, rho,1),nrow = 2,ncol = 2)
+  A <- chol(sigma)
+  for(i in 1:sampl_size){
+    Z <- rnorm(2)
+    X <- t(A)%*%Z
+    X1[i] <- X[1]
+    X2[i] <- X[2]
+  }
+plot(X1,X2, pch = 20, main= paste("Bivariate Normal with correlation=",
+                                    rho))  
+}
+```
+
+As the correlation increases, the scatter plot looks elliptical signifying that a higher value of X1 is accompanied by a higher value of X2 and vice-versa. 
+
+## Question 3(b)
+### Bivariate t-distribution
+```{r}
+deg_freedom <- 5
+rhos <- c(0, 0.4,0.8)
+for(rho in rhos){
+  sigma <- matrix(c(1,rho, rho,1),nrow = 2,ncol = 2)
+  A <- chol(sigma)
+  for(i in 1:sampl_size){
+    Z <- rnorm(2)
+    X <- t(A)%*%Z
+    S <- rchisq(1, deg_freedom)
+    Tvec <- sqrt(deg_freedom/S)*X
+    X1[i] <- Tvec[1]
+    X2[i] <- Tvec[2]
+  }
+plot(X1,X2, pch = 20, main= paste("Bivariate t-distribution(df=5) with correlation=",
+                                    rho))  
+}
+```
+
+As the correlation increases, the scatter plot looks elliptical signifying that a higher value of X1 is accompanied by a higher value of X2 and vice-versa. We can observe a heavier tail in the distribution as the ellipse is more elongated than in the previous case.
+
+
+## Question 3(c)
+### Gaussian Copula
+```{r}
+rhos <- c(0, 0.4,0.8)
+U1 <- numeric()
+U2 <- numeric()
+for(rho in rhos){
+  sigma <- matrix(c(1,rho, rho,1),nrow = 2,ncol = 2)
+  A <- chol(sigma)
+  for(i in 1:sampl_size){
+    Z <- rnorm(2)
+    Y <- t(A)%*%Z
+    U <- pnorm(Y)
+    X1[i] <- -log(U[1])
+    X2[i] <- -log(U[2])
+    U1[i] <- U[1]
+    U2[i] <- U[2]
+  }
+plot(X1,X2, pch = 20, main= paste("Exponential marginal with Gaussian Copula with correlation=",
+                                    rho))  
+}
+```
+
+As we increase the correlation between the variables the spread of the data reduces signifying a higher value of X1 is accompanied with a higher value of X2.
+
+## Question 3(d)
+### t-5 copula
+```{r}
+rhos <- c(0, 0.4,0.8)
+deg_freedom <- 5
+for(rho in rhos){
+  sigma <- matrix(c(1,rho, rho,1),nrow = 2,ncol = 2)
+  A <- chol(sigma)
+  for(i in 1:sampl_size){
+    Z <- rnorm(2)
+    Y <- t(A)%*%Z
+    S <- rchisq(1, deg_freedom)
+    W <- sqrt(deg_freedom/S)*Y
+    U <- pt(W, deg_freedom)
+    X1[i] <- -log(U[1])
+    X2[i] <- -log(U[2])
+    U1[i] <- U[1]
+    U2[i] <- U[2]
+  }
+plot(X1,X2, pch = 20, main= paste("Exponential marginal with t(df=5) Copula with correlation=",                                    rho))
+}
+```
+
+As we increase the correlation between the variables the spread of the data reduces signifying a higher value of X1 is accompanied with a higher value of X2. 
+The points in the tail of the bivariate exponentail distribution from Gaussian copula are more spread out than in the case with t-copula(as the correlation increases, the difference becomes more pronounced).
+
+## Question 4(c)
+```{r}
+degrees <- c(1,3,5,10,30)
+
+GFunc <- function(x,n){
+  ret_val <- 0.5*(1+x^2)*((1+1/n)/(1+x^2/n))^(0.5*(n+1))
+  return(ret_val)
+}
+
+for(degree in degrees){
+  X = rep(0, sampl_size)
+  I = rep(0, sampl_size)
+  for (j in 1:sampl_size)
+  {
+    while (I[j] == 0)
+    {
+      u = runif(2)
+      y = GFunc(tan(pi*(u[1]-0.5)),degree)
+      if (u[2] <= y){
+        X[j] = tan(pi*(u[1]-0.5))
+        I[j] = 1
+      }
+    }
+  }
+qqnorm(X, pch=20, main = paste("Normal Q-Q plot with Rejection Algorithm for t with df=",
+                                 degree))
+  abline(0,1,col="red")
+}
+
+
+
+```
+
+We observe that as we **decrease** the degrees of freedom the distribution becomes heavier tailed. The distribution with degrees of freedom equal to 30 is quite close to that of a theoretical normal distribution.
+
+## Question 5(a)
+### Black Scholes using Standard monte carlo technique
+```{r}
+sampl_size <- 1000
+S0 <- 100
+Time <- 1
+r <- 0.05
+sigma <- 0.1
+biz_days <- 252
+deltaTime <- Time/biz_days
+
+sexp <- numeric()
+for(i in 1:sampl_size){
+  stockPrice <- S0*exp((r-0.5*sigma^2)*deltaTime+sigma*rnorm(1)*sqrt(deltaTime))   
+  for(k in 2:biz_days){
+   stockPrice = stockPrice*exp((r-0.5*sigma^2)*deltaTime+sigma*rnorm(1)*sqrt(deltaTime))   
+  }
+  sexp[i] <- stockPrice   
+}
+
+strikes <- c(95, 100, 105)
+
+terminal_prices <- list()
+call_price <- numeric()
+se_call <- numeric()
+thr_call_price <- numeric()
+for (strike in strikes){
+  terminal_prices[[toString(strike)]] <- exp(-1*r*Time)*ifelse(sexp - strike > 0,
+                                                             sexp - strike, 0)  
+  call_price[toString(strike)] <- mean(terminal_prices[[toString(strike)]])
+  se_call[toString(strike)] <- sqrt(sum((terminal_prices[[toString(strike)]]-
+                               call_price[toString(strike)])^2)/(sampl_size*(sampl_size-1)))
+thr_call_price[toString(strike)] <- as.double(BS_EC( Time, K = strike, r, sigma, S0)[1])
+}
+
+cat("Call Prices and Standard Errors\n")
+print(call_price)
+print(se_call)
+cat("\nTheoretical Call Prices:\n")
+print(thr_call_price)
+```
+
+We observe that the prices obtained using the Monte-Carlo technique is quite close the Black-Scholes option prices for each strike price. 
+
+## Question 5(b)
+### Antithetic Variables
+```{r}
+sampl_size <- 1000
+S0 <- 100
+Time <- 1
+r <- 0.05
+sigma <- 0.1
+biz_days <- 252
+deltaTime <- Time/biz_days
+
+sexp <- numeric()
+i <- 1
+while(i <= 2*sampl_size){
+      rand <- rnorm(1)
+      stockPrice[1] <- S0*exp((r-0.5*sigma^2)*deltaTime+sigma*rand*sqrt(deltaTime))
+      stockPrice[2] <- S0*exp((r-0.5*sigma^2)*deltaTime+sigma*-rand*sqrt(deltaTime))
+      for(k in 2:biz_days){
+        rand <- rnorm(1)
+        stockPrice[1] <- stockPrice[1]*exp((r-0.5*sigma^2)*deltaTime+sigma*
+                                             rand*sqrt(deltaTime))
+        stockPrice[2] <- stockPrice[2]*exp((r-0.5*sigma^2)*deltaTime+sigma*-1*
+                                             rand*sqrt(deltaTime))   
+      }
+    sexp[i] = stockPrice[1]
+    sexp[i+1] = stockPrice[2]
+    i = i + 2  
+}
+
+strikes <- c(95, 100, 105)
+
+terminal_prices <- list()
+call_price <- numeric()
+se_call <- numeric()
+thr_call_price <- numeric()
+for (strike in strikes){
+  terminal_prices[[toString(strike)]] <- exp(-1*r*Time)*ifelse(sexp - strike > 0,
+                                                               sexp - strike, 0)
+  # pair up the call prices
+  terminal_prices[[toString(strike)]] <- (terminal_prices[[toString(strike)]]
+                      [seq(1,2*sampl_size,by = 2)] + terminal_prices[[toString(strike)]]
+                      [seq(2,2*sampl_size, by = 2)])/2 
+  call_price[toString(strike)] <- mean(terminal_prices[[toString(strike)]])
+  se_call[toString(strike)] <- sqrt(sum((terminal_prices[[toString(strike)]]-
+                            call_price[toString(strike)])^2)/(sampl_size*(sampl_size-1)))
+  thr_call_price[toString(strike)] <- as.double(BS_EC( Time, K = strike, r, sigma, S0)[1])
+}
+
+cat("Call Prices and Standard Errors\n")
+print(call_price)
+print(se_call)
+cat("\nTheoretical Call Prices:\n")
+print(thr_call_price)
+```
+
+We observe that the call prices in this case too are really close to the Black-Scholes call prices for each strike. There is a significant reduction in the standard errors if we use the anithetic variables. In some cases the reduction is by more than a half which is higher than that obtained by increasing the sample size by 2 times.

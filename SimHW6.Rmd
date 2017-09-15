@@ -1,0 +1,262 @@
+---
+title: "Simulations HW6"
+author: "Adil Hayat"
+date: "26 April 2017"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(nleqslv)
+library(rootSolve)
+```
+## Generic functions
+```{r}
+set.seed(0)
+calculateMeanSE <- function(var){
+  return(sqrt(sum((var - mean(var))^2)/(length(var)*(length(var)-1))))
+}
+
+generateAntitheticPaths <- function(S0=S0, r=r, sigma=sigma,Time=Time, N=N, div=0){
+  stockPrice <- list(numeric(), numeric())
+  deltaTime <- Time/N
+  rand <- rnorm(1)
+  stockPrice[[1]][1] <- S0*exp((r-0.5*sigma^2)*deltaTime+sigma*rand*sqrt(deltaTime))
+  stockPrice[[2]][1] <- S0*exp((r-0.5*sigma^2)*deltaTime+sigma*-rand*sqrt(deltaTime))
+  for(k in 2:N){
+    rand <- rnorm(1)
+    stockPrice[[1]][k] <- stockPrice[[1]][k-1]*exp((r-0.5*sigma^2)*deltaTime+sigma*
+                      rand*sqrt(deltaTime))
+    stockPrice[[2]][k] <- stockPrice[[2]][k-1]*exp((r-0.5*sigma^2)*deltaTime+sigma*-1*
+                      rand*sqrt(deltaTime))   
+  }
+  return(stockPrice)
+}
+
+##Laguerre polynomials 
+L0 <- function(x){
+  exp(-x/2)
+}
+
+L1 <- function(x){
+  exp(-x/2)*(1-x)
+}
+
+L2 <- function(x){
+  exp(-x/2)*(1 - 2*x + 0.5*x^2)
+}
+
+```
+
+
+## Question 1
+```{r paramsq1}
+r <- 0.06
+K <- 40
+Nsteps <- 50
+res_df <- data.frame(matrix(nrow=2, ncol=5))
+colnames(res_df) <- c("S","sigma","Time","Price","Std_Err")
+res_df$S <- 40
+res_df$sigma <- 0.2
+res_df$Time <- c(1,2)
+sampl_size <- 100000
+```
+
+```{r dependson="paramsq1", cache=TRUE}
+for(i in 1:nrow(res_df)){
+  # initialiize the matrices
+  pricePaths <- matrix(nrow = sampl_size, ncol = Nsteps)
+  putPrice <- matrix(nrow = sampl_size, ncol = Nsteps)
+
+  # generate the paths
+  texp <- res_df$Time[i]
+  sig <- res_df$sigma[i]
+  S0 <- res_df$S[i]
+  delTime <- texp/Nsteps
+  j <- 1
+  while(j <=sampl_size){
+    prices <- generateAntitheticPaths(S0=S0, r=r, sigma=sig,Time=texp, N=Nsteps)
+    pricePaths[j,] <- prices[[1]]
+    pricePaths[j+1,] <- prices[[2]]
+    j = j + 2  
+  }
+  
+  # generate the terminal prices
+  putPrice[,Nsteps] <- pmax(K - pricePaths[,Nsteps],0) 
+  
+  # regress and calculate the prices
+  k <- Nsteps-1
+  while(k>1){
+    actInd <-  which(pricePaths[,k]<=K)
+    timeIndex <- apply(as.data.frame(putPrice[,(k+1):Nsteps]),MARGIN = 1, function(x){
+      if(is.na(which(x!=0)[1])){return(Nsteps-k)} else{return(which(x!=0)[1])} })
+    y <- (apply(as.data.frame(putPrice[,(k+1):Nsteps]), MARGIN = 1, function(x){
+          max(x)})*exp(-r*timeIndex*delTime))[actInd]
+    
+    X1 <- L0(pricePaths[actInd,k]/K)
+    X2 <- L1(pricePaths[actInd,k]/K)
+    X3 <- L2(pricePaths[actInd,k]/K)
+    reg_df <- data.frame(y,X1,X2,X3)
+    # separate the data frames
+    reg_df$index <- actInd
+    reg_df_main <- reg_df[reg_df$index%%2 != 0,]
+    reg_df_main <- subset(reg_df_main, select=-c(index))
+    reg_df_anti <- reg_df[reg_df$index%%2 == 0,]
+    reg_df_anti <- subset(reg_df_anti, select=-c(index))
+    ## perform separate regression for antithetic variables
+    reg_main <- lm(y~., data = reg_df_main)
+    y_cont_main <- predict(reg_main, reg_df_main)
+    reg_anti <- lm(y~., data = reg_df_anti)
+    y_cont_anti <- predict(reg_anti, reg_df_anti)
+    ## combine the both the paths
+    y_cont_df <- data.frame(actInd)
+    y_cont_df$pred[y_cont_df$actInd %% 2 != 0] <- y_cont_main
+    y_cont_df$pred[y_cont_df$actInd %% 2 == 0] <- y_cont_anti
+    y_cont <- y_cont_df$pred
+    ## fill in the values for the current time
+    putPrice[,k] <- pmax(K - pricePaths[,k],0)
+    ## compare the prices and complete the table for current time
+    for(p in 1:length(actInd)){
+      if(putPrice[actInd[p],k] >= as.double(y_cont[p])){
+        putPrice[actInd[p],k+timeIndex[actInd[p]]] = 0
+      }else{
+        putPrice[actInd[p],k] = 0
+      }
+    }
+    # decrease the index
+    k= k-1
+  }
+  # combine the put prices from antithetic variables 
+  timeInd <- apply(as.data.frame(putPrice[,2:Nsteps]),MARGIN = 1, function(x){
+  if(is.na(which(x!=0)[1])){return(Nsteps)} else{return(which(x!=0)[1]+1)} })
+  putPrice[,1] <- (apply(as.data.frame(putPrice[,2:Nsteps]), MARGIN = 1, function(x){
+        max(x)})*exp(-r*timeInd*delTime))
+
+  all_prices <- putPrice[,1]  
+  put_prices <- (all_prices[seq(1,sampl_size,by = 2)] + all_prices[seq(2,sampl_size,by = 2)])/2
+  res_df$Price[i] <- round(mean(put_prices),5)
+  res_df$Std_Err[i] <- round(calculateMeanSE(put_prices),5)
+}
+knitr::kable(res_df)
+```
+
+
+## Question 2
+```{r paramsq2}
+sampl_size <- 10000
+S0 <- 100
+r <- 0.05
+sig <- 0.2
+Time <- 1
+strikes <- c(120, 140, 160)
+comp_df <- data.frame(matrix(nrow=9, ncol=7))
+colnames(comp_df) <- c("Method", "Strike","BSPrice","m","s","Estimate","StdErr")
+comp_df$Method <- rep(c("GHS","Cap(m)","Cap(m,s)"),3)
+comp_df$Strike <- c(rep(120,3),rep(140,3),rep(160,3))
+comp_df$BSPrice <- c(rep(3.2475,3),rep(0.7847,3),rep(0.1590,3))
+GHS_seq <- seq(1,nrow(comp_df),by=3)
+capm_seq <- seq(2,nrow(comp_df),by=3)
+capms_seq <- seq(3,nrow(comp_df),by=3)
+tab_df <- data.frame(matrix(nrow=3, ncol=6))
+colnames(tab_df) <- c("Strike","m_GHS","Std_Err","m_NonLinLS","s_NonLin","StdErr")
+tab_df$Strike <- c(120,140,160)
+```
+
+## Question 2(a)
+```{r dependson="paramsq2", cache=TRUE}
+i <- 1
+for(el in GHS_seq){
+  strike <- comp_df$Strike[el]
+  comp_df$s[el] <- 1
+  ST <- function(m){S0*exp((r-0.5*sig^2)*Time + sig*sqrt(Time)*m)}
+  f <- function(m){((sig*sqrt(Time))/(1-(strike/ST(m))))-m}
+  AA <- uniroot.all(f,c(1,3))
+  comp_df$m[el] <- ifelse(length(AA)>1, AA[2],AA)
+  # calculate the price using importance sampling
+  normals <- rnorm(sampl_size, mean = comp_df$m[el], sd = comp_df$s[el])
+  sexp <- S0*exp((r-0.5*sig^2)*Time+sig*normals*sqrt(Time))   
+  call_prices <- exp(-r*Time)*pmax(sexp-strike,0)*exp(-comp_df$m[el]*normals+0.5*comp_df$m[el]^2)  
+  comp_df$Estimate[el] <- mean(call_prices)
+  comp_df$StdErr[el] <- calculateMeanSE(call_prices)
+  tab_df$m_GHS[i] <- round(ifelse(length(AA)>1, AA[2],AA),4)
+  tab_df$Std_Err[i] <- round(comp_df$StdErr[el],4)
+  i=i+1
+}
+
+```
+
+## Question 2(b)
+```{r dependson="paramsq2", cache=TRUE}
+ST <- function(x){
+  S0*exp((r-0.5*sig^2)*Time + sig*sqrt(Time)*x)
+}
+
+W <- function(x, m){
+  exp( -m*x + 0.5*m^2)
+}
+
+for(el in capm_seq){
+  strike <- comp_df$Strike[el]
+  comp_df$s[el] <- 1
+
+  minFunc <- function(par,x){
+    m <- par[1]
+    mean((exp(-r*Time)*pmax(0,ST(x)-strike))^2*W(x,m))
+  }
+  
+  x <- rnorm(sampl_size)   
+  optimout = optim(c(2), minFunc, x=x, method="BFGS")
+  
+  comp_df$m[el] <- optimout$par
+  # calculate the price using importance sampling
+  normals <- rnorm(sampl_size, mean = comp_df$m[el], sd = comp_df$s[el])
+  sexp <- S0*exp((r-0.5*sig^2)*Time+sig*normals*sqrt(Time))   
+  call_prices <- exp(-r*Time)*pmax(sexp-strike,0)*exp(-comp_df$m[el]*normals+0.5*comp_df$m[el]^2)  
+  comp_df$Estimate[el] <- mean(call_prices)
+  comp_df$StdErr[el] <- calculateMeanSE(call_prices)
+}
+
+```
+
+## Question 2(c)
+```{r dependson="paramsq2", cache=TRUE}
+ST <- function(x){
+  S0*exp((r-0.5*sig^2)*Time + sig*sqrt(Time)*x)
+}
+
+W <- function(x, m, s){
+  exp(s)*exp(-0.5*(x^2-((x-m)/exp(s))^2))
+}
+i <- 1
+for(el in capms_seq){
+  strike <- comp_df$Strike[el]
+  
+  minFunc <- function(par,x){
+    m <- par[1]
+    s <- par[2] 
+    mean((exp(-r*Time)*pmax(0,ST(x)-strike))^2*W(x,m,s))
+  }
+  
+  x <- rnorm(sampl_size)   
+  optimout = optim(c(2,-0.5), minFunc, x=x, hessian=TRUE, method="BFGS")
+  comp_df$m[el] <- optimout$par[1]
+  comp_df$s[el] <- exp(optimout$par[2])
+  # calculate the price using importance sampling
+  normals <- rnorm(sampl_size, mean = comp_df$m[el], sd = comp_df$s[el])
+  sexp <- S0*exp((r-0.5*sig^2)*Time+sig*normals*sqrt(Time))
+  RN_adj <- comp_df$s[el]*exp(-0.5*(normals^2-((normals-comp_df$m[el])/comp_df$s[el])^2))
+  call_prices <- exp(-r*Time)*pmax(sexp-strike,0)*RN_adj
+  comp_df$Estimate[el] <- mean(call_prices)
+  comp_df$StdErr[el] <- calculateMeanSE(call_prices)
+  tab_df$m_NonLinLS[i] <- round(optimout$par[1],4)
+  tab_df$s_NonLin[i] <- round(exp(optimout$par[2]),4)
+  tab_df$StdErr[i] <- round(comp_df$StdErr[el],4)
+  i = i+1
+}
+knitr::kable(comp_df)
+# create the table
+knitr::kable(tab_df)
+```
+

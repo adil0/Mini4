@@ -1,0 +1,460 @@
+---
+title: "Simulations HW5"
+author: "Adil Hayat"
+date: "19 April 2017"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(MASS)
+```
+
+## Generic function to generate paths of Brownian Motion
+```{r}
+generateGeomBMPaths <- function(S0=S0, r=r, sigma=sigma,Time=Time, N=N, div=0) {
+  stockPrice <- numeric()
+  deltaTime <- Time/N
+  stockPrice[1] <- S0*exp((r-div-0.5*sigma^2)*deltaTime+sigma*rnorm(1)*sqrt(deltaTime))   
+  for(k in 2:N){
+   stockPrice[k] = stockPrice[k-1]*exp((r-div-0.5*sigma^2)*deltaTime+sigma*rnorm(1)*
+                                         sqrt(deltaTime))   
+  }
+  return(stockPrice)
+}
+
+generateTerminalGeomBMPaths <- function(S0=S0, r=r, sigma=sigma,Time=Time, div=0) {
+  stockPrice <- S0*exp((r-div-0.5*sigma^2)*Time+sigma*rnorm(1)*sqrt(Time))   
+  return(stockPrice)
+}
+
+generateTermGeomBMPathsUnif <- function(S0=S0, r=r, sigma=sigma,Time=Time,
+                                        min=0, max=1,div=0) {
+  stockPrice <- S0*exp((r-div-0.5*sigma^2)*Time+sigma*
+                qnorm(runif(1, min = min, max = max))*sqrt(Time))   
+  return(stockPrice)
+}
+
+calculateMeanSE <- function(var){
+  return(sqrt(sum((var - mean(var))^2)/(length(var)*(length(var)-1))))
+}
+```
+
+## Question 1
+## parameters
+```{r paramsq1}
+S0 <- c(100,100)
+sigma <- c(0.2, 0.2)
+Time <- 1
+r <- 0.05
+K <- 100
+sampl_size <- 1000
+comp_df <- data.frame(matrix(nrow=3,ncol=3))
+colnames(comp_df) <- c("Method","Call_Price","SE_Call_Price")
+comp_df$Method <- c("Standard Monte Carlo", "Bivariate Stratification", 
+                    "Conditioning on Projection")
+```
+## 1(a)
+```{r, dependson="paramsq1",cache=TRUE}
+S1 <- numeric()
+S2 <- numeric()
+call_prices <- numeric()
+for(i in 1:sampl_size){
+  S1[i] <- generateTermGeomBMPathsUnif(S0 = S0[1], r = r, sigma = sigma[1],
+          Time = Time)
+  S2[i] <- generateTermGeomBMPathsUnif(S0 = S0[2], r = r, sigma = sigma[2],
+          Time = Time)
+  call_prices[i] <- exp(-r*Time)*max( 0.5*(S1[i] + S2[i]) - K, 0)
+}
+
+call_price <- mean(call_prices)
+se_call <- sqrt(sum((call_prices - call_price)^2)/(sampl_size*(sampl_size-1)))
+comp_df$Call_Price[1] <- call_price
+comp_df$SE_Call_Price[1] <- se_call
+cat("Call Price and Standard Error\n")
+cat("Call Price: ", call_price, "\n")
+cat("Standard Error: ", se_call)
+```
+## 1(b)
+```{r 1(b), dependson="paramsq1", cache=TRUE}
+bin_size <- 10
+num_bins <- sampl_size/bin_size
+x_bins <- 10
+y_bins <- 10  
+bin_price <- matrix(nrow = 10,ncol = 10)
+bin_var <- matrix(nrow = 10,ncol = 10)
+
+for(k in 1:x_bins){
+  for(j in 1:x_bins){
+    S1 <- numeric()
+    S2 <- numeric()
+    call_prices <- numeric()
+    for(i in 1:bin_size){
+      x_min <- 0.1*(k-1) 
+      x_max <- 0.1*(k)
+      y_min <- 0.1*(j-1) 
+      y_max <- 0.1*(j)
+      S1[i] <- generateTermGeomBMPathsUnif(S0 = S0[1], r = r, 
+               sigma = sigma[1], Time = Time, min = x_min, max=x_max)
+      S2[i] <- generateTermGeomBMPathsUnif(S0 = S0[2], r = r,
+               sigma = sigma[2], Time = Time, min = y_min, max=y_max)
+      call_prices[i] <- exp(-r*Time)*max( 0.5*(S1[i] + S2[i]) - K, 0)
+    }
+    bin_price[k,j] <- mean(call_prices)
+    bin_var[k,j] <- var(call_prices)  
+  }
+}
+
+call_price <- mean(bin_price)
+se_call <- sqrt(sum(bin_var)/(num_bins*sampl_size))
+comp_df$Call_Price[2] <- call_price
+comp_df$SE_Call_Price[2] <- se_call
+cat("Call Price and Standard Error\n")
+cat("Call Price: ", call_price, "\n")
+cat("Standard Error: ", se_call)
+```
+
+## 1(c)
+```{r 1(c), dependson="paramsq1", cache=TRUE}
+num_bins <- 250
+bin_size <- 4
+nu <- c(1/sqrt(2), 1/sqrt(2))
+
+
+bin_price <- numeric()
+bin_var <- numeric()
+for(i in 1:num_bins){
+  call_prices <- numeric()
+  for(j in 1:bin_size){
+    x_min <- (i-1)/num_bins
+    x_max <- i/num_bins
+    # generate the uniform random number
+    x <- qnorm(runif(1, min = x_min, max = x_max))
+    mean <- nu*x
+    sigmaMat <- diag(2) - nu%*%t(nu)
+    z <- mvrnorm(n = 1, mu = mean, Sigma = sigmaMat)
+    S1 <- S0[1]*exp((r-0.5*sigma[1]^2)*Time+sigma[1]*z[1]*sqrt(Time))
+    S2 <- S0[2]*exp((r-0.5*sigma[2]^2)*Time+sigma[2]*z[2]*sqrt(Time))
+    call_prices[j] <- exp(-r*Time)*max(0.5*(S1 + S2) - K, 0)  
+  }
+  bin_price[i] <- mean(call_prices)
+  bin_var[i] <- var(call_prices)
+}
+
+call_price <- mean(bin_price)
+se_call <- sqrt(sum(bin_var)/(num_bins*sampl_size))
+comp_df$Call_Price[3] <- call_price
+comp_df$SE_Call_Price[3] <- se_call
+cat("Call Prices and Standard Errors\n")
+cat("Call Price: ", call_price, "\n")
+cat("Standard Error: ", se_call)
+knitr::kable(comp_df)
+```
+
+We observe that the standard error reduces significantly(becomes ~1/4 th) by using the bivariate stratification. The conditioning on projection method gives significant reduction in the standard error as compared to both the methods.
+
+## Question 2
+```{r paramsq2}
+S0 <- 50
+mu <- 0.15
+r <- 0.1
+sig <- 0.25
+K <- 50
+sampl_size <- 1000
+N <- 30
+Time <- 0.25
+```
+## 2(a)
+## standard Monte Carlo
+```{r 2(a), cache=TRUE}
+opt_prices <- numeric()
+for(i in 1:sampl_size){
+  stockPrice <- generateGeomBMPaths(S0 = S0, r = r, sigma = sig,
+                Time = Time, N = 30)
+  opt_prices[i] <- exp(-r*Time)*max(max(stockPrice)-K,0)
+}
+
+opt_price <- mean(opt_prices)
+se_opt_price <- sqrt(sum((opt_prices - opt_price)^2)/(sampl_size*(sampl_size-1)))
+
+cat("Options Price and Standard Error\n")
+cat("Option Price: ", opt_price, "\n")
+cat("Standard Error: ", se_opt_price)
+
+```
+## Brownian Bridge
+```{r, cache=TRUE}
+deltaTime <- Time/N
+opt_prices <- numeric()
+for(i in 1:sampl_size){
+ stockPrice <- numeric()
+ maxPrice <- S0
+ stockPrice[1] <- S0 + r*S0*deltaTime + sig*S0*sqrt(deltaTime)*rnorm(1) 
+ b <- (stockPrice[1]-S0)/(sig*S0)
+ maxPrice <- S0 + sig*S0*0.5*(b + sqrt(b^2 - 2*deltaTime*log(1-runif(1))))
+ 
+ for(k in 2:N){
+   stockPrice[k] <- stockPrice[k-1] + r*stockPrice[k-1]*deltaTime + 
+                    sig*stockPrice[k-1]*sqrt(deltaTime)*rnorm(1)
+   b <- (stockPrice[k] - stockPrice[k-1])/(sig*stockPrice[k-1])
+   maxPrice <- max(stockPrice[k-1] + sig*stockPrice[k-1]*
+              0.5*(b + sqrt(b^2 - 2*deltaTime*log(1-runif(1)))), maxPrice)
+ }
+ opt_prices[i] <- exp(-r*Time)*max(maxPrice - K, 0)
+}
+
+opt_price <- mean(opt_prices)
+se_opt_price <- sqrt(sum((opt_prices - opt_price)^2)/(sampl_size*(sampl_size-1)))
+
+cat("Options Price and Standard Error\n")
+cat("Option Price: ", opt_price, "\n")
+cat("Standard Error: ", se_opt_price)
+```
+
+The option price obtained using Brownian bridge is higher than the one obtained using Standard Monte Carlo technique.
+
+## 2(b)
+## using the final price as the strike price
+```{r, cache=TRUE}
+opt_prices <- numeric()
+for(i in 1:sampl_size){
+  stockPrice <- generateGeomBMPaths(S0 = S0, r = r, sigma = sig,
+                Time = Time, N = 30)
+  opt_prices[i] <- exp(-r*Time)*max(max(stockPrice)-stockPrice[N],0)
+}
+
+opt_price <- mean(opt_prices)
+se_opt_price <- sqrt(sum((opt_prices - opt_price)^2)/(sampl_size*(sampl_size-1)))
+
+cat("Options Price and Standard Error\n")
+cat("Option Price: ", opt_price, "\n")
+cat("Standard Error: ", se_opt_price)
+```
+## Brownian Bridge
+```{r, cache=TRUE}
+deltaTime <- Time/N
+opt_prices <- numeric()
+for(i in 1:sampl_size){
+ stockPrice <- numeric()
+ maxPrice <- S0
+ stockPrice[1] <- S0 + r*S0*deltaTime + sig*S0*sqrt(deltaTime)*rnorm(1) 
+ b <- (stockPrice[1]-S0)/(sig*S0)
+ maxPrice <- S0 + sig*S0*0.5*(b + sqrt(b^2 - 2*deltaTime*log(1-runif(1))))
+ 
+ for(k in 2:N){
+   stockPrice[k] <- stockPrice[k-1] + r*stockPrice[k-1]*deltaTime + 
+                    sig*stockPrice[k-1]*sqrt(deltaTime)*rnorm(1)
+   b <- (stockPrice[k] - stockPrice[k-1])/(sig*stockPrice[k-1])
+   maxPrice <- max(stockPrice[k-1] + sig*stockPrice[k-1]*
+              0.5*(b + sqrt(b^2 - 2*deltaTime*log(1-runif(1)))), maxPrice)
+ }
+ opt_prices[i] <- exp(-r*Time)*max(maxPrice - stockPrice[N], 0)
+}
+
+opt_price <- mean(opt_prices)
+se_opt_price <- sqrt(sum((opt_prices - opt_price)^2)/(sampl_size*(sampl_size-1)))
+
+cat("Options Price and Standard Error\n")
+cat("Option Price: ", opt_price, "\n")
+cat("Standard Error: ", se_opt_price)
+```
+
+Compared to the values in the table 1, the options prices are lower as expected as the expected terminal stock price is $S_0e^{rT}$. Also, The option price obtained using Brownian bridge is higher than the one obtained using Standard Monte Carlo technique.
+
+
+## 2(c)
+## knock-out options
+```{r params2c, cache=TRUE}
+S0 <- 50
+r <- 0.1
+sig <- 0.5
+K <- 50
+H <- 45
+N <- 30
+sampl_size <- 100000
+```
+## standard monte carlo
+```{r, dependson="params2c",cache=FALSE}
+opt_prices <- numeric()
+for(i in 1:sampl_size){
+  stockPrice <- generateGeomBMPaths(S0 = S0, r = r, sigma = sig,
+                                    Time = Time, N = 30)
+  barr_crossed <- ifelse(min(stockPrice) < H, 1, 0)
+  opt_prices[i] <- exp(-r*Time)*(1-barr_crossed)*max(stockPrice[N]-K,0)
+}
+
+opt_price <- mean(opt_prices)
+se_opt_price <- sqrt(sum((opt_prices - opt_price)^2)/(sampl_size*(sampl_size-1)))
+
+cat("Options Price and Standard Error\n")
+cat("Option Price: ", opt_price, "\n")
+cat("Standard Error: ", se_opt_price)
+```
+## Brownian Bridge
+```{r, cache=TRUE}
+deltaTime <- Time/N
+opt_prices <- numeric()
+for(i in 1:sampl_size){
+ stockPrice <- numeric()
+ minPrice <- 0
+ stockPrice[1] <- S0 + r*S0*deltaTime + sig*S0*sqrt(deltaTime)*rnorm(1) 
+ b <- (stockPrice[1]-S0)/(sig*S0)
+ minPrice <- S0 + sig*S0*0.5*(b - sqrt(b^2 - 2*deltaTime*log(1-runif(1))))
+ 
+ for(k in 2:N){
+   stockPrice[k] <- stockPrice[k-1] + r*stockPrice[k-1]*deltaTime + 
+                    sig*stockPrice[k-1]*sqrt(deltaTime)*rnorm(1)
+   b <- (stockPrice[k] - stockPrice[k-1])/(sig*stockPrice[k-1])
+   minPrice <- min(stockPrice[k-1] + sig*stockPrice[k-1]*
+              0.5*(b - sqrt(b^2 - 2*deltaTime*log(1-runif(1)))), minPrice)
+ }
+ barr_crossed <- ifelse(minPrice < H, 1, 0)
+ opt_prices[i] <- exp(-r*Time)*(1-barr_crossed)*max(stockPrice[N] - K, 0)
+}
+
+opt_price <- mean(opt_prices)
+se_opt_price <- sqrt(sum((opt_prices - opt_price)^2)/(sampl_size*(sampl_size-1)))
+
+cat("Options Price and Standard Error\n")
+cat("Option Price: ", opt_price, "\n")
+cat("Standard Error: ", se_opt_price)
+```
+
+The option price obtained using Brownian bridge is lower than the one obtained using Standard Monte Carlo technique.
+
+## Question 3
+```{r paramsq3}
+S0 <- c(100, 100)
+Time <- 0.2
+r <- 0.1
+sigma <- c(0.3, 0.3)
+rho <- 0.5
+K <- 100
+H <- 95
+N <- 50
+sampl_size <- 100000
+deltaTime <- Time/N
+```
+
+##3(a)
+## Standard Monte Carlo 
+```{r, dependson="paramsq3", cache=TRUE}
+opt_prices <- numeric()
+for(i in 1:sampl_size){
+  S1 <- numeric()
+  S2 <- numeric()
+  mu <- c(0,0)
+  sigmaMat <- matrix(data=c(1,rho,rho,1), nrow = 2, ncol = 2)
+  z <- mvrnorm(n = 1, mu = mu, Sigma = sigmaMat)
+  S1[1] <- S0[1] + r*S0[1]*deltaTime + sigma[1]*S0[1]*sqrt(deltaTime)*z[1]
+  S2[1] <- S0[2] + r*S0[2]*deltaTime + sigma[2]*S0[2]*sqrt(deltaTime)*z[2]
+  
+  for(k in 2:N){
+    z <- mvrnorm(n = 1, mu = mu, Sigma = sigmaMat)
+    S1[k] <- S1[k-1] + r*S1[k-1]*deltaTime + sigma[1]*S1[k-1]*sqrt(deltaTime)*z[1]
+    S2[k] <- S2[k-1] + r*S2[k-1]*deltaTime + sigma[2]*S2[k-1]*sqrt(deltaTime)*z[2]
+  }
+  barr_crossed <- ifelse(min(S2)<H, 1, 0)
+  opt_prices[i] <- exp(-r*Time)*(1-barr_crossed)*max(S1[N]-K,0)
+}
+
+opt_price <- mean(opt_prices)
+se_opt_price <- sqrt(sum((opt_prices - opt_price)^2)/(sampl_size*(sampl_size-1)))
+
+cat("Options Price and Standard Error\n")
+cat("Option Price: ", opt_price, "\n")
+cat("Standard Error: ", se_opt_price)
+```
+
+##3(b)
+## Brownian Bridge
+```{r, dependson="paramsq3", cache=TRUE}
+opt_prices <- numeric()
+for(i in 1:sampl_size){
+  S1 <- numeric()
+  S2 <- numeric()
+  mu <- c(0,0)
+  sigmaMat <- matrix(data=c(1,rho,rho,1), nrow = 2, ncol = 2)
+  z <- mvrnorm(n = 1, mu = mu, Sigma = sigmaMat)
+  S1[1] <- S0[1] + r*S0[1]*deltaTime + sigma[1]*S0[1]*sqrt(deltaTime)*z[1]
+  S2[1] <- S0[2] + r*S0[2]*deltaTime + sigma[2]*S0[2]*sqrt(deltaTime)*z[2]
+  minPrice <- 0
+  b <- (S2[1]-S0[2])/(sigma[2]*S0[2])
+  minPrice <- S0[2] + sigma[2]*S0[2]*0.5*(b - sqrt(b^2 - 2*deltaTime*
+                                                     log(1-runif(1))))
+  for(k in 2:N){
+    z <- mvrnorm(n = 1, mu = mu, Sigma = sigmaMat)
+    S1[k] <- S1[k-1] + r*S1[k-1]*deltaTime + sigma[1]*S1[k-1]*sqrt(deltaTime)*z[1]
+    S2[k] <- S2[k-1] + r*S2[k-1]*deltaTime + sigma[2]*S2[k-1]*sqrt(deltaTime)*z[2]
+    b <- (S2[k] - S2[k-1])/(sigma[2]*S2[k-1])
+    minPrice <- min(S2[k-1] + sigma[2]*S2[k-1]*0.5*(b - sqrt(b^2 - 2*deltaTime*
+                log(1-runif(1)))), minPrice)
+  }
+  barr_crossed <- ifelse(minPrice < H, 1, 0)
+  opt_prices[i] <- exp(-r*Time)*(1-barr_crossed)*max(S1[N]-K, 0)
+}
+
+opt_price <- mean(opt_prices)
+se_opt_price <- sqrt(sum((opt_prices - opt_price)^2)/(sampl_size*(sampl_size-1)))
+
+cat("Options Price and Standard Error\n")
+cat("Option Price: ", opt_price, "\n")
+cat("Standard Error: ", se_opt_price)
+```
+
+
+# Question 4
+```{r paramsq4}
+N <- 5
+Time <- 5
+r <- 0.04
+RRate <- 0.35
+s <- 0.01
+rhos <- seq(0,1,by = 0.2)
+sampl_size <- 100000
+
+# lambda
+lam <- s/(1-RRate)
+
+```
+
+```{r, dependson="paramsq4", cache=TRUE}
+res_df <- data.frame(matrix(nrow = length(rhos), ncol = 11))
+colnames(res_df) <- c("Corr","Ftd", "FtdSE","2td", "2tdSE","3td", "3tdSE",
+                      "4td", "4tdSE","5td", "5tdSE")
+res_df$Corr <- rhos
+
+for(j in 1:nrow(res_df)){
+  rho <- res_df$Corr[j]
+  sigmaMat <- diag(N)
+  sigmaMat[lower.tri(sigmaMat)] <- rep(rho,sum(lower.tri(sigmaMat)))
+  sigmaMat[upper.tri(sigmaMat)] <- t(sigmaMat[lower.tri(sigmaMat)])
+  # generate Gaussian coupla
+  if(rho!=1){
+    A <- chol(sigmaMat)
+  }
+  prices <- matrix(nrow = sampl_size, ncol = N)
+  for(i in 1:sampl_size){
+    def_time <- numeric()
+    if(rho == 1){
+      def_time <- -log(rep(runif(1),N))/lam
+    }else{
+      Z <- rnorm(N)
+      Y <- t(A)%*%Z
+      U <- pnorm(Y)
+      def_time <- -log(U)/lam
+    }
+    # count the number of bonds that defaulted
+    num_def <- sum(def_time < Time)
+    prices[i,] <- exp(-r*Time)*(1-RRate)*ifelse(num_def >= seq(1,5), 1, 0)
+  }
+  res_df[j, seq(2,10,2)] <- round(apply(prices, MARGIN = 2, mean),6)
+  res_df[j, seq(3,11,2)] <- round(apply(prices, MARGIN = 2, function(x)
+                            {calculateMeanSE(x)}),6)
+}
+
+knitr::kable(res_df)
+```
+

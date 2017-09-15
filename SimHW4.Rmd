@@ -1,0 +1,390 @@
+---
+title: "Simulations HW4"
+author: "Adil Hayat"
+date: "14 April 2017"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(OptionPricing)
+set.seed(0)
+```
+
+## Generic function to generate paths of Brownian Motion
+```{r}
+generateGeomBMPaths <- function(S0=S0, r=r, sigma=sigma,Time=Time, N=N, div=0) {
+  stockPrice <- numeric()
+  deltaTime <- Time/N
+  stockPrice[1] <- S0*exp((r-div-0.5*sigma^2)*deltaTime+sigma*rnorm(1)*sqrt(deltaTime))   
+  for(k in 2:N){
+   stockPrice[k] = stockPrice[k-1]*exp((r-div-0.5*sigma^2)*deltaTime+sigma*rnorm(1)*
+                                         sqrt(deltaTime))   
+  }
+  return(stockPrice)
+}
+```
+
+## Question 1
+```{r}
+# Parameters
+S0 <- 100
+K <- 100
+r <- 0.05
+V0 <- 0.04
+Time <- 1
+sampl_size <- 10000
+h <- 0.0001
+N <- 50
+comp_df <- data.frame(matrix(nrow=2,ncol=6))
+colnames(comp_df) <- c("alpha","psi","SMCPrice","SMCSE","CMCPrice","CMCSE")
+comp_df$alpha <- 0.1
+comp_df$psi <- c(0.1,1.0)
+```
+
+## Question 1(a)
+```{r, cache=TRUE}
+deltaTime <- Time/N
+for(j in 1:nrow(comp_df)){
+  alpha <- comp_df$alpha[j]
+  psi <- comp_df$psi[j]
+  call_prices <- numeric()
+  for(i in 1:sampl_size){
+    stockPrice <- numeric()
+    variance <- numeric()
+    stockPrice[1] <- S0 + r*S0*deltaTime + sqrt(V0)*rnorm(1)*S0*sqrt(deltaTime)
+    variance[1] <- V0*exp((alpha-0.5*psi^2)*deltaTime+psi*rnorm(1)*sqrt(deltaTime))
+    for(k in 2:N){
+      stockPrice[k] <- stockPrice[k-1] + r*S0*deltaTime + 
+                       sqrt(variance[k-1])*rnorm(1)*stockPrice[k-1]*sqrt(deltaTime)
+      variance[k] <- variance[k-1]*exp((alpha-0.5*psi^2)*deltaTime + 
+                       psi*rnorm(1)*sqrt(deltaTime))
+    }
+    call_prices[i] <- exp(-r*Time)*max(stockPrice[N]-K,0)
+  }
+  call_price <- mean(call_prices)
+  se_call <- sqrt(sum((call_prices - call_price)^2)/(sampl_size*(sampl_size-1)))
+  comp_df$SMCPrice[j] <- call_price
+  comp_df$SMCSE[j] <- se_call  
+}
+```
+
+## Question 1(b)
+```{r}
+for(j in 1:nrow(comp_df)){
+  alpha <- comp_df$alpha[j]
+  psi <- comp_df$psi[j]
+  call_prices <- numeric()
+  for(i in 1:sampl_size){
+    variances <- generateGeomBMPaths(S0 = V0, r = alpha, sigma = psi, Time = Time, N = N)
+    sig <- sqrt(mean(variances))
+    call_prices[i] <- as.double(BS_EC(S0 = S0,T = Time, K = K, r = r, sigma = sig)[1])
+  }
+  call_price <- mean(call_prices)
+  se_call <- sqrt(sum((call_prices - call_price)^2)/(sampl_size*(sampl_size-1)))
+  comp_df$CMCPrice[j] <- call_price
+  comp_df$CMCSE[j] <- se_call  
+}
+print(comp_df)
+```
+
+We observe that the standard errors for the Conditional Monte Carlo much lower than in the case with Standard Monte Carlo simulation.
+
+## Question 2
+```{r}
+# Parameters
+sampl_size <- 1000
+alpha <- 0.2
+sigma <- 0.1
+b <- 0.05
+R0 <- 0.04
+N <- 50
+Time <- 1
+
+generateCIRPath <- function(alpha=alpha, sigma=sigma, b=b, R0=R0, N=N, Time=Time) {
+  rate <- numeric()
+  deltaTime <- Time/N
+  d <- (4*b*alpha)/sigma^2
+  lam <- (4*alpha*exp(-alpha*deltaTime))*R0/(sigma^2*(1-exp(-alpha*deltaTime)))
+  rate[1] <- sigma^2*(1-exp(-alpha*deltaTime))*rchisq(n = 1, df = d, ncp = lam)/
+            (4*alpha)  
+  for(k in 2:N){
+    lam <- (4*alpha*exp(-alpha*deltaTime))*rate[k-1]/
+            (sigma^2*(1-exp(-alpha*deltaTime)))
+    rate[k] <- sigma^2*(1-exp(-alpha*deltaTime))*rchisq(n = 1, df = d, ncp = lam)/
+               (4*alpha)  
+  }
+  return(rate)
+}
+```
+## Question 2(a)
+```{r}
+bondPrices <- numeric()
+deltaTime <- Time/N
+for(i in 1:sampl_size){
+  rate <- generateCIRPath(alpha, sigma, b, R0, N, Time)
+  bondPrices[i] <- exp(-deltaTime*sum(rate))
+}
+
+bond_price <- mean(bondPrices)
+se_bond_price <- sqrt(sum((bondPrices - bond_price)^2)/
+                        (sampl_size*(sampl_size-1)))
+cat("Bond Price: ", bond_price, "\n")
+cat("se(Bond Price): ", se_bond_price, "\n")
+```
+## Question 2(b)
+```{r}
+strikeRate <- 0.05
+del <- 1/12
+L <- 1
+capletPrices <- numeric()
+for(i in 1:sampl_size){
+ rate <- generateCIRPath(alpha, sigma, b, R0, N, Time)
+ capletPrices[i] <- L*del*max(rate[N]-strikeRate,0)*exp(-deltaTime*sum(rate))
+}
+
+capletPrice <- mean(capletPrices)
+se_caplet_price <- sqrt(sum((capletPrices - capletPrice)^2)/
+                          (sampl_size*(sampl_size-1)))
+cat("Caplet Price: ", capletPrice, "\n")
+cat("se(Caplet Price): ", se_caplet_price, "\n")
+```
+
+## Question 3
+```{r}
+# Parameters
+S0 <- 90
+K <- 100
+r <- 0.1
+sigma <- 0.25
+Time <- 0.2
+sampl_size <- 10000
+h <- 0.0001
+N <- 50
+del <- 0.03
+
+
+# generates paths at S0+h and S0
+generateDelPaths <- function(S0=S0, K=K, r=r, sigma=sigma,Time=Time, N=N, h=h, div=0) {
+  Sminus <- numeric()
+  Splus <- numeric()
+  deltaTime <- Time/N
+  rand <- rnorm(1)
+  Sminus[1] <- (S0)*exp((r-div-0.5*sigma^2)*deltaTime+sigma*rand*sqrt(deltaTime))   
+  Splus[1] <- (S0+h)*exp((r-div-0.5*sigma^2)*deltaTime+sigma*rand*sqrt(deltaTime))   
+  for(k in 2:N){
+    rand <- rnorm(1)
+    Sminus[k] <- Sminus[k-1]*exp((r-div-0.5*sigma^2)*deltaTime+sigma*rand*
+                                   sqrt(deltaTime))   
+    Splus[k] <- Splus[k-1]*exp((r-div-0.5*sigma^2)*deltaTime+sigma*rand*
+                                 sqrt(deltaTime))   
+  }
+  return(list(Splus,Sminus))
+}
+
+# generates paths at sig0+h and sig0
+generateSigDelPaths <- function(S0=S0, K=K, r=r, sigma=sigma,Time=Time, N=N, h=h, div=0) {
+  Sminus <- numeric()
+  Splus <- numeric()
+  deltaTime <- Time/N
+  rand <- rnorm(1)
+  Sminus[1] <- (S0)*exp((r-div-0.5*(sigma)^2)*deltaTime+(sigma)*rand*sqrt(deltaTime))   
+  Splus[1] <- (S0)*exp((r-div-0.5*(sigma+h)^2)*deltaTime+(sigma+h)*rand*sqrt(deltaTime))   
+  for(k in 2:N){
+    rand <- rnorm(1)
+    Sminus[k] <- Sminus[k-1]*exp((r-div-0.5*(sigma)^2)*deltaTime+(sigma)*
+                                   rand*sqrt(deltaTime))   
+    Splus[k] <- Splus[k-1]*exp((r-div-0.5*(sigma+h)^2)*deltaTime+(sigma+h)*
+                                 rand*sqrt(deltaTime))   
+  }
+  return(list(Splus,Sminus))
+}
+
+```
+## Calculation of values
+```{r}
+res_df <- data.frame(matrix(nrow = 6,ncol=5))
+colnames(res_df) <- c("Method", "DeltaEst", "DeltaStdErr", "VegaEst", "VegaStdErr")
+res_df$Method <- c("Resimulation estimate","Resimulation with control",
+                      "Pathwise estimate", "Pathwise with control",
+                      "Likelyhood estimate", "Likelyhood with control")
+
+## Resampling
+# calculate deltas
+deltas <- numeric()
+sexp <- numeric()
+for(i in 1:sampl_size){
+  pricePaths <- generateDelPaths(S0=S0, K=K, r=r, sigma=sigma,Time=Time, N=N, h=h, div = del)
+  callPricePlus <- exp(-r*Time)*ifelse(pricePaths[[1]][N]-K > 0, pricePaths[[1]][N]-K, 0)
+  callPriceMinus <- exp(-r*Time)*ifelse(pricePaths[[2]][N]-K > 0, pricePaths[[2]][N]-K, 0)
+  deltas[i] <- (callPricePlus - callPriceMinus)/(h)
+  sexp[i] <- pricePaths[[2]][N]
+}
+
+delta <- mean(deltas)
+seDelta <- sqrt(sum((deltas - delta)^2)/(sampl_size*(sampl_size-1)))
+res_df$DeltaEst[1] <- delta
+res_df$DeltaStdErr[1] <- seDelta
+
+# with control
+aEst <- -1*cov(sexp, deltas)/var(sexp)
+deltasCont <- deltas + aEst*(sexp-S0*exp((r-del)*Time))
+res_df$DeltaEst[2] <- mean(deltasCont)
+res_df$DeltaStdErr[2] <- sqrt(sum((deltasCont - mean(deltasCont))^2)/
+                                (sampl_size*(sampl_size-1)))
+
+# calculate vegas  
+vegas <- numeric()
+sexp <- numeric()
+for(i in 1:sampl_size){
+  pricePaths <- generateSigDelPaths(S0=S0, K=K, r=r, sigma=sigma, Time=Time, 
+                                    N=N, h=h, div = del)
+  callPricePlus <- exp(-r*Time)*max(pricePaths[[1]][N]-K, 0)
+  callPriceMinus <- exp(-r*Time)*max(pricePaths[[2]][N]-K, 0)
+  vegas[i] <- (callPricePlus - callPriceMinus)/(h)
+  sexp[i] <- pricePaths[[2]][N]
+}
+vega <- mean(vegas)
+seVega <- sqrt(sum((vegas - vega)^2)/(sampl_size*(sampl_size-1)))
+res_df$VegaEst[1] <- vega
+res_df$VegaStdErr[1] <- seVega
+# with control
+aEst <- -1*cov(sexp, vegas)/var(sexp)
+vegasCont <- vegas + aEst*(sexp-S0*exp((r-del)*Time))
+res_df$VegaEst[2] <- mean(vegasCont)
+res_df$VegaStdErr[2] <- sqrt(sum((vegasCont - mean(vegasCont))^2)/
+                               (sampl_size*(sampl_size-1)))
+
+
+## Pathwise Estimate
+deltas <- numeric()
+vegas <- numeric()
+for(i in 1:sampl_size){
+  pricePaths <- generateGeomBMPaths(S0=S0,r = r, sigma=sigma, Time=Time, N=N, div=del)
+  deltas[i] <- exp(-r*Time)*ifelse(pricePaths[N]-K > 0, 1, 0)*pricePaths[N]/S0
+  vegas[i] <- exp(-r*Time)*ifelse(pricePaths[N]-K > 0, 1, 0)*
+              (log(pricePaths[N]/S0)-(r-del+0.5*sigma^2)*Time)*pricePaths[N]/sigma
+  sexp[i] <- pricePaths[N]
+}
+
+delta <- mean(deltas)
+seDelta <- sqrt(sum((deltas - delta)^2)/(sampl_size*(sampl_size-1)))
+res_df$DeltaEst[3] <- delta
+res_df$DeltaStdErr[3] <- seDelta
+# with final stock price as control
+aEst <- -1*cov(sexp, deltas)/var(sexp)
+deltasCont <- deltas + aEst*(sexp-S0*exp((r-del)*Time))
+res_df$DeltaEst[4] <- mean(deltasCont)
+res_df$DeltaStdErr[4] <- sqrt(sum((deltasCont - mean(deltasCont))^2)/
+                                (sampl_size*(sampl_size-1)))
+# vega
+vega <- mean(vegas)
+seVega <- sqrt(sum((vegas - vega)^2)/(sampl_size*(sampl_size-1)))
+res_df$VegaEst[3] <- vega
+res_df$VegaStdErr[3] <- seVega
+# with final stock price as control
+aEst <- -1*cov(sexp, vegas)/var(sexp)
+vegasCont <- vegas + aEst*(sexp-S0*exp((r-del)*Time))
+res_df$VegaEst[4] <- mean(vegasCont)
+res_df$VegaStdErr[4] <- sqrt(sum((vegasCont - mean(vegasCont))^2)/
+                               (sampl_size*(sampl_size-1)))
+
+
+## Likelyhood Estimate
+deltas <- numeric()
+vegas <- numeric()
+sexp <- numeric()
+for(i in 1:sampl_size){
+  pricePaths <- generateGeomBMPaths(S0=S0, r=r, sigma=sigma,Time=Time, N=N, div=del)
+  deltas[i] <- exp(-r*Time)*max(pricePaths[N]-K,0)*(log(pricePaths[N]/S0)-
+              (r-del-0.5*sigma^2)*Time)/(S0*sigma^2*Time)
+  d <- (log(pricePaths[N]/S0)-(r-del-0.5*sigma^2)*Time)/(sigma*sqrt(Time))
+  deriv <- (log(S0/pricePaths[N]) + (r-del+0.5*sigma^2)*Time)/(sigma^2*sqrt(Time))
+  vegas[i] <- exp(-r*Time)*max(pricePaths[N]-K, 0)*(-d*deriv-(1/sigma))
+  sexp[i] <- pricePaths[N]
+}
+# delta
+delta <- mean(deltas)
+seDelta <- sqrt(sum((deltas - delta)^2)/(sampl_size*(sampl_size-1)))
+res_df$DeltaEst[5] <- delta
+res_df$DeltaStdErr[5] <- seDelta
+# with final stock price as control
+aEst <- -1*cov(sexp, deltas)/var(sexp)
+deltasCont <- deltas + aEst*(sexp-S0*exp((r-del)*Time))
+res_df$DeltaEst[6] <- mean(deltasCont)
+res_df$DeltaStdErr[6] <- sqrt(sum((deltasCont - mean(deltasCont))^2)/
+                                (sampl_size*(sampl_size-1)))
+# vega
+vega <- mean(vegas)
+seVega <- sqrt(sum((vegas - vega)^2)/(sampl_size*(sampl_size-1)))
+res_df$VegaEst[5] <- vega
+res_df$VegaStdErr[5] <- seVega
+# with final stock price as control
+aEst <- -1*cov(sexp, vegas)/var(sexp)
+vegasCont <- vegas + aEst*(sexp-S0*exp((r-del)*Time))
+res_df$VegaEst[6] <- mean(vegasCont)
+res_df$VegaStdErr[6] <- sqrt(sum((vegasCont - mean(vegasCont))^2)/
+                               (sampl_size*(sampl_size-1)))
+print(res_df)
+```
+
+
+## Question 4
+```{r}
+# Parameters
+S0 <- 95
+K <- 100
+r <- 0.05
+sigma <- 0.2
+Time <- 1
+sampl_size <- 10000
+h <- 0.0001
+N <- 50
+```
+
+## Question 4(a)
+$$P(S_0,K,r,T) = e^{-rT}N(d_{-})$$
+          
+$$\frac{\partial P(S_0,K,r,T)}{\partial S_0}=e^{-rT}N^{'}(d_{-})\frac{1}{S_0{\sigma}\sqrt{T}}$$
+$$Delta(\frac{\partial P}{\partial S_0})= e^{-rT}N^{'}(d_{-})\frac{1}{S_0{\sigma}\sqrt{T}}$$
+
+```{r}
+## theoretical value
+dminus <- (log(S0/K)+(r-0.5*sigma^2))/(sigma*sqrt(Time))
+th_val <- exp(-r*Time)*(dnorm(dminus))/(S0*sigma*Time)
+cat("Theoretical Value:", th_val,"\n")
+```
+
+## Question 4(b)
+## Resimulation method
+```{r}
+deltas <- numeric()
+for(i in 1:sampl_size){
+  pricePaths <- generateDelPaths(S0=S0, K=K, r=r, sigma=sigma,Time=Time, N=N, h=h)
+  callPricePlus <- exp(-r*Time)*ifelse(pricePaths[[1]][N]-K > 0, 1, 0)
+  callPriceMinus <- exp(-r*Time)*ifelse(pricePaths[[2]][N]-K > 0, 1, 0)
+  deltas[i] <- (callPricePlus - callPriceMinus)/(h)
+}
+
+delta <- mean(deltas)
+seDelta <- sqrt(sum((deltas - delta)^2)/(sampl_size*(sampl_size-1)))
+cat("Delta: ", delta, "\n")
+cat("se(Delta): ", seDelta, "\n")
+```
+## Question 4(c)
+## Likelyhood Method
+```{r}
+deltas <- numeric()
+for(i in 1:sampl_size){
+  price <- generateGeomBMPaths(S0=S0, r=r, sigma=sigma,Time=Time, N=N)
+  deltas[i] <- exp(-r*Time)*ifelse(price[N]-K > 0, 1, 0)*(log(price[N]/S0) -
+               (r-0.5*sigma^2))/(S0*sigma^2*Time)
+}
+
+delta <- mean(deltas)
+seDelta <- sqrt(sum((deltas - delta)^2)/(sampl_size*(sampl_size-1)))
+cat("Delta: ", delta, "\n")
+cat("se(Delta): ", seDelta, "\n")
+```

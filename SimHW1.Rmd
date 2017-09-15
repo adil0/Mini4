@@ -1,0 +1,244 @@
+---
+title: "SimHW1"
+author: "Adil Hayat"
+date: "23 March 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Question 2
+## matrix values
+```{r}
+library(Matrix)
+# set the seed
+set.seed(0)
+# generator matrix for the markov chain with exponential waiting time
+Q = t(matrix(c(-.1154, .1019, .0083, .0020, .0031, 0, 0, 0,
+    .0091, -.1043, .0787, .0105, .0030, .0030, 0, 0,
+    .0010, .0309, -.1172, .0688, .0107, .0048, 0, .0010,
+    .0007, .0047, .0713, -.1711, .0701, .0174, .0020, .0049,
+    .0005, .0025, .0089, .0813, -.2530, .1181, .0144, .0273,
+    0, .0021, .0034, .0073, .0568, -.1928, .0479, .0753,
+    0,0,.0142, .0142, .0250, .0928, -.4318, .2856,
+    0, 0, 0, 0, 0, 0, 0, 0), nrow = 8, ncol = 8))
+
+# transition matrix used for generating the Alias table
+M = t(matrix(c(0,.8838, .0720, .0173, .0269, 0, 0, 0,
+    .0872, 0, .7545, .1007, .0288, .0288, 0,0,
+    .0085, .2637, 0, .5870, .0913, .0410, 0, .0085,
+    .0041, .0275, .4167, 0, .4097, .1017, .0117, .0286,
+    .0020, .0099, .0352, .3213, 0, .4668, .0569, .1079,
+    0, .0109, .0176, .0379, .2946, 0, .2484, .3906,
+    0, 0, .0329, .0329, .0579, .2149, 0, .6614,
+    0,0,0,0,0,0,0,1), nrow = 8, ncol = 8))
+
+lam = c(.1154, .1043, .1172, .1711, .2530, .1929, .4318, .0001)
+thTransMatrix = expm(5*Q)
+print(thTransMatrix)
+```
+
+# Question 2
+## Exponential distribution
+```{r}
+initRemTime = 5
+N = 8
+
+# initialize the Alias Table
+AliasTable <-  matrix(nrow = N*(N-1), ncol = 3)
+
+# constructing the aliasing table
+for(t in 1:N){
+  L = cbind(c(1,2,3,4,5,6,7,8), M[t,])
+  NN = N-1
+  L[,2] = NN*L[,2]
+  T = matrix(0,nrow = NN, ncol = 3)
+  for(i in 1:NN){
+    L = L[order(L[,2], decreasing = TRUE),]
+    T[i,1] = L[N+1-i,2]
+    T[i,2] = L[N+1-i,1]
+    T[i,3] = L[1,1]
+    L[1,2] = L[1,2]- (1 - L[N+1-i,2])
+    L[N+1-i,2] = -L[N-i,2]
+  }
+AliasTable[(1+(t-1)*(N-1)):(t*(N-1)), ] = T
+}
+
+AliasTable <- as.data.frame(AliasTable)
+names(AliasTable) <- c("Prob","X","A")
+  
+numIter = 1000
+# state matrix to keep track of states across the simulations
+stateMatrix = matrix(nrow=numIter, ncol=(N-1))
+# do it for all the iterations
+for(k in 1:numIter){
+  # initialize the remaining time at the start of each iteration
+  remTime <- rep(initRemTime, N-1)
+  # initial state at the start of each simulation
+  initState = seq(1,(N-1))
+  # we run the simulations till there is no time remaining
+  while(max(remTime) > 0){ 
+    # generate the exponential random variables for state transition
+    randNums = rexp(N-1, rate = lam[1:(N-1)])
+    #calculate the transition for bond in each of the 7 states
+    # there is no transition from state 8
+    for(p in 1:(N-1)){
+      if(remTime[p]>randNums[p] & initState[p] !=8){# we do not wan't change the state
+        remTime[p] = remTime[p] - randNums[p]       #once it has reached state 8 
+        # generating the state in which it will transition to
+        P = AliasTable$Prob[(1+(initState[p]-1)*(N-1)):(initState[p]*(N-1))]
+        X = AliasTable$X[(1+(initState[p]-1)*(N-1)):(initState[p]*(N-1))]
+        A = AliasTable$A[(1+(initState[p]-1)*(N-1)):(initState[p]*(N-1))]
+        n = 1
+        U = runif(n)
+        V = (N -1)* U
+        I = ceiling(V)
+        W = I-V
+        Y = (W <= P[I])
+        YN = Y + 0
+        XX = X[I]*YN + A[I] * (1-YN)
+        # set it to new state
+        initState[p] = XX
+      }else{# end if
+        remTime[p] = 0
+      }# end else 
+    } # end loop for the states
+  } # end while
+  stateMatrix[k,] = initState
+}# end num iter
+
+probMatrix = matrix(0,nrow=N, ncol=N)
+# calculate the probabilities of ending up in each state 
+for(i in 1:(N-1)){
+  # build a contigency table values in each column(gives number of bonds end state k starting from i)
+  tabValue = as.data.frame(table(stateMatrix[,i]))
+  f = as.numeric(levels(tabValue$Var1))[tabValue$Var1]
+  probMatrix[i,f] = tabValue$Freq/numIter
+}
+probMatrix[8,8] = 1
+
+# standard error matrix
+seMatrix = sqrt((probMatrix*(1-probMatrix))/numIter)
+print(probMatrix)
+print(seMatrix)
+
+# Check if the observations lie within 2se
+# calculates how many sd away the observation is
+(probMatrix-as.matrix(thTransMatrix))/seMatrix
+
+```
+
+
+# Question 2
+## Gamma distribution
+```{r}
+initRemTime = 5
+N = 8
+
+# initialize the Alias Table
+AliasTable <-  matrix(nrow = N*(N-1), ncol = 3)
+
+# constructing the aliasing table
+for(t in 1:8){
+  L = cbind(c(1,2,3,4,5,6,7,8), M[t,])
+  NN = N-1
+  L[,2] = NN*L[,2]
+  T = matrix(0,nrow = NN, ncol = 3)
+  for(i in 1:NN){
+    L = L[order(L[,2], decreasing = TRUE),]
+    T[i,1] = L[N+1-i,2]
+    T[i,2] = L[N+1-i,1]
+    T[i,3] = L[1,1]
+    L[1,2] = L[1,2]- (1 - L[N+1-i,2])
+    L[N+1-i,2] = -L[N-i,2]
+  }
+AliasTable[(1+(t-1)*(N-1)):(t*(N-1)), ] = T
+}
+
+AliasTable <- as.data.frame(AliasTable)
+names(AliasTable) <- c("Prob","X","A")
+  
+numIter = 10000
+# state matrix to keep track of states across the simulations
+stateMatrix = matrix(nrow=numIter, ncol=(N-1))
+# do it for all the iterations
+for(k in 1:numIter){
+  # initialize the remaining time at the start of each iteration
+  remTime <- rep(initRemTime, N-1)
+  # initial state at the start of each simulation
+  initState = seq(1,(N-1))
+  # we run the simulations till there is no time remaining
+  while(max(remTime) > 0){ 
+    # generate the exponential random variables for state transition
+    randNums = 0.5*rgamma(N-1, shape=2, rate = lam[1:(N-1)])
+    #randNums = 0.5*(rexp(N-1, rate = lam[1:(N-1)]) + rexp(N-1, rate = lam[1:(N-1)]))
+    #calculate the transition for bond in each of the 7 states
+    # there is no transition from state 8
+    for(p in 1:(N-1)){
+      if(remTime[p]>randNums[p] & initState[p] !=8){# we do not wan't change the state
+        remTime[p] = remTime[p] - randNums[p]       #value once it has reached state 8 
+        # generating the state in which it will transition to
+        P = AliasTable$Prob[(1+(initState[p]-1)*(N-1)):(initState[p]*(N-1))]
+        X = AliasTable$X[(1+(initState[p]-1)*(N-1)):(initState[p]*(N-1))]
+        A = AliasTable$A[(1+(initState[p]-1)*(N-1)):(initState[p]*(N-1))]
+        n = 1
+        U = runif(n)
+        V = (N -1)* U
+        I = ceiling(V)
+        W = I-V
+        Y = (W <= P[I])
+        YN = Y + 0
+        XX = X[I]*YN + A[I] * (1-YN)
+        initState[p] = XX
+      }else{# end if
+        remTime[p] = 0
+      }# end else 
+    } # end loop for the states
+  } # end while
+  stateMatrix[k,] = initState
+}# end num iter
+
+probMatrix = matrix(0,nrow=N, ncol=N)
+# calculate the probabilities of ending up in each state 
+for(i in 1:(N-1)){
+  # build a contigency table values in each column(gives number of bonds end state k starting from i)
+  tabValue = as.data.frame(table(stateMatrix[,i]))
+  f = as.numeric(levels(tabValue$Var1))[tabValue$Var1]
+  probMatrix[i,f] = tabValue$Freq/numIter
+}
+probMatrix[8,8] = 1
+
+# standard error matrix
+seMatrix = sqrt(probMatrix*(1-probMatrix)/numIter)
+print(probMatrix)
+print(seMatrix)
+```
+
+## Question 3(a)
+```{r}
+N = c(100, 1000, 10000)
+
+for(i in 1:length(N)){
+  x = rnorm(N[i])
+  qqnorm(x, pch=20, main = paste("Normal Q-Q plot with", N[i], "iterations", sep = " "))
+  abline(0,1,col="red")
+}
+
+```
+
+## Question 3(b)
+```{r}
+N = c(100, 1000, 10000)
+
+for(i in 1:length(N)){
+  x = numeric(N[i])
+  for(j in 1:N[i]){
+    x[j] = sum(runif(12))-6  
+  }  
+  qqnorm(x, pch=20, main = paste("Normal Q-Q plot with", N[i], "iterations", sep = " "))
+  abline(0,1,col="red")
+  }
+```
+Both the random number generation method perform similarly i.e for N=100, both the methods do not perform poorly and as we increase N, we get random numbers which match closely to that of theoretical Normal distribution.

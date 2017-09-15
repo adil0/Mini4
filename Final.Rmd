@@ -1,0 +1,299 @@
+---
+title: "Final"
+author: "Adil Hayat"
+date: "12 May 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(quantmod)
+library(fGarch)
+library(forecast)
+library(tseries)
+library(car)
+library(vars)
+library(dlm)
+```
+
+
+```{r}
+fulldata = read.table("http://www.stat.cmu.edu/~cschafer/MSCF/TSdatafile2017.txt",header=T)
+```
+# Question 1
+```{r}
+diff_HYspread <- diff(fulldata$HYspread,lag=1)
+par(mfrow=c(2,2))
+plot(fulldata$HYspread, type="l")
+plot(diff_HYspread, type="l")
+acf(fulldata$HYspread,main="HYspread")
+acf(diff_HYspread, main="Differenced Series")
+adf.test(fulldata$HYspread)
+adf.test(diff_HYspread)
+```
+
+```{r}
+par(mfrow=c(1,2))
+acf(diff_HYspread,main="Diff HYspread")
+acf(diff_HYspread^2,main="Diff HYspread")
+```
+```{r}
+fit0 = garchFit(~garch(1,1), dat=diff_HYspread, include.mean=F)
+fit0@fit$matcoef
+
+sresids = residuals(fit0)/fit0@sigma.t
+
+par(mfrow=c(1,2))
+qqnorm(sresids, main="Normal Q-Q plots for residuals")
+qqline(sresids, col="red")
+acf(sresids)
+acf(sresids^2)
+Box.test(sresids^2, fitdf = 2, lag=20, type="Ljung-Box")
+```
+
+```{r}
+fit1 = garchFit(~arma(0,1) + garch(1,1), dat=diff_HYspread, trace = FALSE)
+attributes(fit1)$fit$ics[1]
+
+fit2 = garchFit(~arma(0,2) + garch(1,1), dat=diff_HYspread, trace = FALSE)
+attributes(fit2)$fit$ics[1]
+
+fit3 = garchFit(~arma(0,3) + garch(1,1), dat=diff_HYspread, trace = FALSE)
+attributes(fit3)$fit$ics[1]
+
+fit4 = garchFit(~arma(0,4) + garch(1,1), dat=diff_HYspread, trace = FALSE)
+attributes(fit4)$fit$ics[1]
+
+fit5 = garchFit(~arma(0,5) + garch(1,1), dat=diff_HYspread, trace = FALSE)
+attributes(fit5)$fit$ics[1]
+
+
+# fit6 = garchFit(~arma(0,1) + garch(1,1), dat=diff_HYspread, trace = FALSE, include.mean = FALSE)
+# attributes(fit6)$fit$ics[1]
+# 
+# fit7 = garchFit(~arma(0,2) + garch(1,1), dat=diff_HYspread, trace = FALSE, include.mean = FALSE)
+# attributes(fit7)$fit$ics[1]
+# 
+# fit8 = garchFit(~arma(0,3) + garch(1,1), dat=diff_HYspread, trace = FALSE, include.mean = FALSE)
+# attributes(fit8)$fit$ics[1]
+
+fit9 = garchFit(~arma(0,4) + garch(1,1), dat=diff_HYspread, trace = FALSE, include.mean = FALSE)
+attributes(fit9)$fit$ics[1]
+
+# fit10 = garchFit(~arma(0,5) + garch(1,1), dat=diff_HYspread, trace = FALSE, include.mean = FALSE)
+# attributes(fit10)$fit$ics[1]
+
+
+
+
+```
+
+```{r}
+fit11 = garchFit(~arma(0,4) + aparch(1,1), dat=diff_HYspread, trace = FALSE)
+attributes(fit11)$fit$ics[1]
+
+
+fit12 = garchFit(~arma(0,4) + aparch(1,1), dat=diff_HYspread, trace = FALSE, include.mean = FALSE)
+attributes(fit12)$fit$ics[1]
+
+```
+
+```{r}
+fit13 = auto.arima(fulldata$INTC, d=1, approximation = FALSE, step = FALSE, ic="aicc", max.order = 10)
+fit13
+
+# Question 8
+Box.test(fit13$residuals, fitdf = 5, lag=20, type="Ljung-Box")
+
+acf(fit13$residuals)
+acf(fit13$residuals^2)
+```
+```{r}
+ccf(diff(fulldata$INTC), diff(fulldata$HYspread))
+ccf(diff(fulldata$HYspread),diff(fulldata$INTC))
+```
+
+```{r}
+var1 = VAR(cbind(diff(fulldata$HYspread), diff(fulldata$INTC)),ic="AIC", lag.max = 5)
+summary(var1)
+```
+
+```{r}
+holdfit = lm(INTC~HYspread, data=fulldata)
+print(durbinWatsonTest(holdfit, max.lag = 10))
+acf(holdfit$residuals, main="Linear regression model ACF")
+
+
+holdfit = lm(diff(fulldata$INTC)~diff(fulldata$HYspread))
+print(durbinWatsonTest(holdfit, max.lag = 10))
+
+```
+
+
+
+# Statistical Test
+```{r}
+Box.test(holdfit1$residuals, fitdf = , lag=20, type="Ljung-Box")
+# test stationarity
+adf.test(TB3MS_diff1)
+Box.test(holdfit$residuals, fitdf = 3, lag=20, type="Ljung-Box")
+```
+
+
+
+# plots
+```{r}
+#(a) normal probability plot of the residuals
+qqnorm(holdfit1$residuals, main="Normal Q-Q plots for residuals")
+qqline(holdfit1$residuals, col="red")
+#(b) acf of the residuals
+acf(holdfit1$residuals, main= "ACF plots for residuals")
+
+# general Q-Q plot
+plot(sort(sresids),qstd(ppoints(length(sresids)),
+      nu=fordfit2@fit$matcoef[6,1]))
+abline(0,1, col="red")
+```
+
+# State space and kalman filter
+```{r}
+buildLT = function(x)
+{
+  FF = diag(1)
+  GG = diag(1)*x[3]
+  V = diag(1) * exp(x[1])
+  W = diag(1) * exp(x[2])
+  m0 = diag(1)
+  C0 = diag(1) * 1e7
+  return(list(m0 = m0, C0 = C0, FF = FF, GG = GG, 
+         V = V, W = W))
+}
+# Read in the data
+realvol = read.table("http://www.stat.cmu.edu/~cschafer/MSCF/aa-3rv.txt")
+rvser = log(realvol[,2])
+holdfit = dlmMLE(rvser,c(0,0,1),buildLT)
+
+# Kalman filter
+filtout = dlmFilter(rvser,buildLT(holdfit$par))
+smoothout = dlmSmooth(rvser,buildLT(holdfit$par))
+
+#plot the filtered and original series 
+plot(ts(rvser),lwd=1,cex.axis=1.3,cex.lab=1.3,ylab="Log Volatility")
+points(ts(filtout$m),lwd=4,col=4,lty=1,type="l")
+
+#plot the smoothed and original series 
+plot(ts(rvser),lwd=1,cex.axis=1.3,cex.lab=1.3,ylab="Log Volatility")
+points(ts(smoothout$s),lwd=4,col=4,lty=1,type="l")
+
+```
+
+```{r}
+# garch model
+# fitting an arma(0,1) + garch(2,0) model
+garch.model.Del.Tbill = garchFit(formula= ~arma(0,1) + garch(2,0), 
+                                 del.log.tbill, trace = FALSE)
+summary(garch.model.Del.Tbill)
+garch.model.Del.Tbill@fit$matcoef
+
+# the residuals
+res_log_bill = residuals(garch.model.Del.Tbill)
+res_std_log_bill = res_log_bill / garch.model.Del.Tbill@sigma.t
+
+# auto.arima
+holdfit <- auto.arima(TB3MS_sub, d=1, approximation = FALSE, step = FALSE, ic="aicc")
+holdfit
+
+# seasonal model
+holdfit <- arima(consTs, order=c(0,1,0), seasonal = list(order=c(1,1,0), period=4))
+
+holdfit_auto <- auto.arima(consTs, d=1, D=1, approx=FALSE, ic="aicc")
+print(holdfit_auto)
+
+holdautopreds <- predict(holdfit_auto, n.ahead=8)
+
+# 95% connfidence predictions plot
+plot(exp(consTs), xlab="Year", ylab="Consumption", xlim=c(1,17.5), ylim=c(0,65000))
+lines(exp(holdautopreds$pred), col=2)
+lines(exp(holdautopreds$pred + 1.96*holdautopreds$se), col=2, lty=2)
+lines(exp(holdautopreds$pred - 1.96*holdautopreds$se), col=2, lty=2)
+
+# garch fit with plots
+fordfit3 = garchFit(~aparch(1,1), dat=logret, include.mean=F,
+                    cond.dist = "std", trace = FALSE, delta=2,
+                    include.delta=FALSE)
+sresids = residuals(fordfit3)/fordfit3@sigma.t
+plot(sort(sresids),qstd(ppoints(length(sresids)),
+      nu=fordfit3@fit$matcoef[5,1]))
+abline(0,1, col="red")
+
+# extract AIC
+aic_df$AIC[1] <- attributes(fordfit2)$fit$ics[1]
+aic_df$AIC[2] <- attributes(fordfit3)$fit$ics[1]
+aic_df$AIC[3] <- attributes(fordfit4)$fit$ics[1]
+
+# prediction intervals
+holdpreds <- predict(holdfit, n.ahead = 3)
+lower_int <- holdpreds$pred - 1.96*holdpreds$se
+upper_int <- holdpreds$pred + 1.96*holdpreds$se
+cat("Upper Interval:", as.double(upper_int),"\n")
+cat("Lower Interval:", as.double(lower_int))
+
+
+```
+
+
+```{r}
+# Try skewed Version
+holdfit3 = garchFit(~garch(1,1),dat=logret, include.mean=F,
+                    cond.dist="sstd")
+sresids = residuals(holdfit3)/holdfit3@sigma.t
+plot(sort(sresids),qsstd(ppoints(length(sresids)),
+      nu=holdfit3@fit$matcoef[5,1],xi=holdfit3@fit$matcoef[4,1]))
+abline(0,1)
+```
+
+```{r}
+library(dlm)
+
+# This function needs to return: m0, C0, FF, GG, V, W
+
+# The parameter order is (phi1, phi2, sigma2)
+
+buildLT = function(x)
+{
+   FF = diag(1)
+  
+   GG = diag(1)*x[3]
+
+   V = diag(1) * exp(x[1])
+
+   W = diag(1) * exp(x[2])
+
+   m0 = diag(1)*40
+
+   C0 = diag(1) * 1e7
+
+   return(list(m0 = m0, C0 = C0, FF = FF, GG = GG, 
+       V = V, W = W))
+}
+
+# Read in the data
+
+realvol = arima.sim(n = 45, list(ar = c(0.2)), sd = sqrt(0.1))
+
+realvol = floor((realvol + -1*min(realvol))*100)
+
+holdfit = dlmMLE(realvol,c(0,0,1),buildLT)
+
+filtout = dlmFilter(realvol,buildLT(holdfit$par))
+smoothout = dlmSmooth(realvol,buildLT(holdfit$par))
+
+
+plot(ts(realvol),lwd=1,cex.axis=1.3,cex.lab=1.3,ylab="Log Volatility")
+points(ts(filtout$m),lwd=4,col=4,lty=1,type="l")
+
+plot(ts(realvol),lwd=1,cex.axis=1.3,cex.lab=1.3,ylab="Log Volatility")
+points(ts(smoothout$s),lwd=4,col=4,lty=1,type="l")
+
+```
+

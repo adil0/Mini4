@@ -1,0 +1,19 @@
+---
+title: "TSAssign1"
+author: "Adil Hayat"
+date: "20 March 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r Question1}
+plot(pressure)
+```
+
+```{r Question2}
+
+```
+

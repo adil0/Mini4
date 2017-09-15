@@ -1,0 +1,120 @@
+---
+title: "Time Series HW6"
+author: "Adil Hayat"
+date: "28 April 2017"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(forecast)
+```
+## Question 1
+This section uses the USMacroG data set used earlier in Section 12.12.1. In the earlier section, we did not investigate residual correlation, but now we will. The model will be the regression of changes in unemp = unemployment rate on changes in government = real government expenditures and changes in invest = real investment by the private sector. Run the following R code to
+read the data, compute differences, and then fit a linear regression model with AR(1) errors.
+
+**Problem 1 Fit a linear regression model using lm, which assumes uncorrelated errors. Compare the two models by AIC and residual ACF plots. Which model fits better?**
+```{r, warning=FALSE}
+library(AER)
+data("USMacroG")
+MacroDiff= as.data.frame(apply(USMacroG,2,diff))
+attach(MacroDiff)
+fit1 = arima(unemp,order=c(1,0,0),xreg=cbind(invest,government))
+reg_model <- lm(unemp~invest + government)
+par(mfrow= c(1,2))
+acf(fit1$residuals, main="AR(1) regression model ACF")
+acf(reg_model$residuals, main="Linear regression model ACF")
+cat("AIC of the AR(1) model=", AIC(fit1), "\n")
+cat("AIC of the regression model=", AIC(reg_model), "\n")
+cat("\nResult of Durbin Watson Test for the regression model:","\n")
+print(durbinWatsonTest(reg_model, max.lag = 5))
+```
+
+We observe that the AIC of the AR(1) regression model is lower than the linear regression model. The ACF of the residuals from the regression model suggest the need to include a time series model for the model error. The Durbin-Watson test also suggest that there is siginificant serial correlation in the residuals.
+The AR(1) regression model fits the data better.
+
+
+```{r}
+fitarma11 = arima(unemp,order=c(1,0,1),xreg=cbind(invest,government))
+firar2 = arima(unemp,order=c(2,0,0),xreg=cbind(invest,government))
+par(mfrow= c(1,2))
+acf(fitarma11$residuals, main="ARMA(1,1) regression model ACF")
+acf(firar2$residuals, main="AR(2) regression model ACF")
+cat("AIC of the AR(1) model=", AIC(fit1), "\n")
+cat("AIC of the ARMA(1,1) model=", AIC(fitarma11), "\n")
+cat("AIC of the AR(2) regression model=", AIC(firar2), "\n")
+
+```
+
+**Problem 3** _Does the model with AR(2) noise or the model with ARMA(1,1) noise offer a better fit than the model with AR(1) noise?_
+
+Based on the values of AIC, the model with AR(2) noise offers a better fit than the AR(1) model. 
+
+## Question 2
+```{r}
+library("Ecdat")
+data(IncomeUK)
+consumption = IncomeUK[,2]
+par(mfrow=c(1,3))
+plot(consumption)
+plot(log(consumption))
+acf(log(consumption), main="ACF of log(Consumption)")
+diff_con <- diff(log(consumption), lag = 1, differences = 1)
+par(mfrow=c(1,2))
+plot(diff_con, main="1st differenced consumption")
+acf(diff_con, main="1st differenced consumption ACF")
+diff_series <- diff(diff_con, lag=4, differences = 1)
+par(mfrow=c(1,2))
+plot(diff_series, main="Seasonally differenced series")
+acf(diff_series, main="Seasonally differenced")
+consTs <- ts(log(consumption), frequency = 4)
+holdfit <- arima(consTs, order=c(0,1,0), seasonal = list(order=c(1,1,0), period=4))
+acf(holdfit$residuals, main="Residual ACF")
+qqnorm(holdfit$residuals, main = "Residual Q-Q plot")
+qqline(holdfit$residuals)
+
+```
+
+**Problem 1** _Describe the behavior of consumption. What types of differencing, seasonal, nonseasonal, or both, would you recommend? Do you recommend fitting a seasonal ARIMA model to the data with or without a log transformation? Consider also using ACF plots to help answer these questions._
+
+The range of consumption is very huge, so taking log of the series for scaling seems reasonable. Observing the ACF of the log consumption, the series seems non-stationary which corroborates the need for differencing. We tried first-order differencing which ensures that the effect of the local trend has been largely removed. Observing the ACF of first-differenced series, there is a clear evidence of seasonal component at a yearly lag. So, we difference further to obtain a stationary series on which we can fit our model.
+Observing the ACF plot of the series differenced locally as well as seasonally, we observe a strong correlation at a lag of 1 year. So, the appropraite model to fit here would be ARIMA(0,1,0)(1,1,0)
+
+
+**Problem 2** _Regardless of your answers to Problem 1, find an ARIMA model that provides a good fit to log(consumption). What order model did you select? (Give the orders of the nonseasonal and seasonal components.)_
+
+The model ARIMA(0,1,0)(1,1,0) seems to provide a good fit for the data. The non-seasonal component being an ARIMA(0,1,0) model and the seasonal component being ARIMA(1,1,0) with yearly seasonality.
+
+**Problem 3** _Check the ACF of the residuals from the model you selected in Problem 2. Do you see any residual autocorrelation?_
+
+We do not observe any autocorrelation in the residuals.
+
+**Problem 4** _Apply auto.arima to log(consumption) using AIC. What model is selected?_
+```{r}
+holdfit_auto <- auto.arima(consTs, d=1, D=1, approx=FALSE, ic="aicc")
+print(holdfit_auto)
+par(mfrow=c(1,1))
+acf(holdfit_auto$residuals)
+qqnorm(holdfit_auto$residuals, main="Residual Q-Q plot")
+qqline(holdfit_auto$residuals)
+```
+
+**Problem 5** _Forecast log(consumption) for the next eight quarters using the models you found in Problems 2 and 4. Plot the two sets of forecasts in side-by-side plots with the same limits on the x- and y-axes. Describe any differences between the two sets of forecasts._
+```{r}
+holdpreds <- predict(holdfit, n.ahead=8)
+holdautopreds <- predict(holdfit_auto, n.ahead=8)
+
+par(mfrow=c(1,2))
+plot(exp(consTs), xlab="Year", ylab="Consumption", xlim=c(1,17.5), ylim=c(0,65000))
+lines(exp(holdautopreds$pred), col=2)
+lines(exp(holdautopreds$pred + 1.96*holdautopreds$se), col=2, lty=2)
+lines(exp(holdautopreds$pred - 1.96*holdautopreds$se), col=2, lty=2)
+
+plot(exp(consTs), xlab="Year", ylab="Consumption", xlim=c(1,17.5), ylim=c(0,65000))
+lines(exp(holdpreds$pred), col=2)
+lines(exp(holdpreds$pred + 1.96*holdpreds$se), col=2, lty=2)
+lines(exp(holdpreds$pred - 1.96*holdpreds$se), col=2, lty=2)
+
+```

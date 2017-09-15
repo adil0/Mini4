@@ -1,0 +1,66 @@
+---
+title: "Time Series HW3"
+author: "Adil Hayat"
+date: "12 April 2017"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+suppressPackageStartupMessages(library(quantmod))
+suppressPackageStartupMessages(library(tseries))
+suppressPackageStartupMessages(library(forecast))
+```
+
+
+```{r, cache=TRUE}
+TB3MS <- getSymbols("TB3MS", src="FRED", auto.assign = FALSE)
+TB3MS_sub <- TB3MS["1990-01-01/2012-12-31"]
+plot(TB3MS_sub, ylab="3-month T-Bill Rate", main="3-month Treasury Bill Rate")
+```
+
+The series does not seem stationary as the time series doesn't seem to fluctuate around a particular level.
+
+## Question 2(b)
+## Taking the differences
+```{r}
+TB3MS_diff1 <- diff(TB3MS_sub,lag = 1, differences = 1)[-1]
+TB3MS_diff2 <- diff(TB3MS_sub,lag = 1, differences = 2)[-1:-2]
+plot(TB3MS_diff1, main="1st Order Differenced T-Bill")
+par(mfrow=c(1,2))
+acf(TB3MS_diff1, main = "1st Order Differencing")
+acf(TB3MS_diff2, main = "2nd Order Differencing")
+adf.test(TB3MS_diff1)
+```
+
+The difference series looks staionary as it fluctuates around 0 and there is no clear pattern in the variance across time. The acf plot with a difference of 1 looks reasonable while if we take the difference twice we get an acf plot with significant negative correlation at lag 1 suggesting that we have applied differencing more than that is needed.
+ADF test also suggests that the 1st order differenced series is stationary.
+
+## Question 2(c)
+```{r}
+holdfit <- auto.arima(TB3MS_sub, d=1, approximation = FALSE, step = FALSE, ic="aicc")
+holdfit
+```
+
+## Question 2(d)
+```{r}
+acf(holdfit$residuals,main= "ACF of the residuals", na.action = na.omit)
+Box.test(holdfit$residuals, fitdf = 3, lag=20, type="Ljung-Box")
+```
+
+The model seems to be a reasonable fit for the data as we observe no significant auto-correlation at lower lags and there is no pattern to the lags as well. The observed auto-correlation at higher lags can just be an artifact of way hypothesis testing is designed. From the Box Test, we observe that there is some residual correlation at some lags.
+
+## Question 2(e)
+```{r}
+holdpreds <- predict(holdfit, n.ahead = 3)
+lower_int <- holdpreds$pred - 1.96*holdpreds$se
+upper_int <- holdpreds$pred + 1.96*holdpreds$se
+cat("Upper Interval:", as.double(upper_int),"\n")
+cat("Lower Interval:", as.double(lower_int))
+```
+
+# Question 2(f)
+Yes, the intervals include the observed values as the intervals shown for the data points as shown above.
+The actual values for 3-month T-Bill rate were **0.07, 0.1, 0.09**.

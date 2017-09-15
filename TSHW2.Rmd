@@ -1,0 +1,97 @@
+---
+title: "Time Series HW2"
+author: "Adil Hayat"
+date: "1 April 2017"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(forecast)
+library(Ecdat)
+```
+
+```{r}
+data(CRSPday)
+crsp=CRSPday[,7]
+```
+
+Let's do a bit more diagnostic on the difference time series. 
+```{r}
+plot(crsp, main="Time Series of CRSP daily data") # time series plots
+acf(as.numeric(crsp), main="ACF plot for CRSP") # auto-correlations
+pacf(as.numeric(crsp), main="PACF plot for CRSP") # pacf plot
+holdfit1 = arima(as.numeric(crsp), order = c(1,0,0))
+print(holdfit1)
+#(a) normal probability plot of the residuals
+qqnorm(holdfit1$residuals, main="Normal Q-Q plots for residuals")
+qqline(holdfit1$residuals, col="red")
+#(b) acf of the residuals
+acf(holdfit1$residuals, main= "ACF plots for residuals")
+#(c) compare the sample acf and fit ACF for the model
+par(mfrow=c(1,2))
+acf(as.numeric(crsp), main= "Sample ACF plot")
+plot(0:10, ARMAacf(ar=c(as.double(holdfit1$coef[1])), lag.max=10), 
+     type="b", pch=16, ylab = "ACF", main="Theoretical ACF plot")
+#(d) test if the residuals have non-zero auto correlations
+Box.test(holdfit1$residuals, fitdf = 1, lag=20, type="Ljung-Box")
+#(e) AIC for the model
+cat("AIC of the AR(1) model:", AIC(holdfit1), "\n")
+
+cat("AR(2) process diagnostic")
+# AR(2) process diagnostic 
+holdfit2 <- arima(as.numeric(crsp), order = c(2,0,0))
+print(holdfit2)
+
+#(a) normal probability plot of the residuals
+qqnorm(holdfit2$residuals, main="Normal Q-Q plots for residuals")
+qqline(holdfit2$residuals, col="red")
+#(b) acf of the residuals
+acf(holdfit2$residuals,main= "ACF of the residuals")
+#(c) compare the sample acf and fit ACF for the model
+par(mfrow=c(1,2))
+acf(as.numeric(crsp), main= "Sample ACF plot")
+plot(0:10, ARMAacf(ar=c(as.double(holdfit2$coef[1]), as.double(holdfit2$coef[1])), 
+                   lag.max=10), type="b", pch=16, ylab = "ACF", main="Theoretical ACF plot")
+#(d) test if the residuals have non-zero auto correlations
+Box.test(holdfit2$residuals, fitdf = 2, lag=20, type="Ljung-Box")
+#(e) AIC for the model
+AIC(holdfit2)
+
+# 95% confidence interval for phi in AR(1) model
+as.double(holdfit1$coef[1]) - qnorm(0.975)*as.double(sqrt(diag(holdfit1$var.coef))[1])
+as.double(holdfit1$coef[1]) + qnorm(0.975)*as.double(sqrt(diag(holdfit1$var.coef))[1])
+```
+_(a) Would you prefer an AR(1) or an AR(2) model for this time series? Explain your answer._
+
+**Ans:** AR(1) model seems more appropriate for this time series as the evidenced by the acf and pacf plots. Moreover, the AIC for the AR(1) model is lower than that of an AR(2) model. 
+
+_(b) Find a 95% confidence interval for phi for the AR(1) model._
+
+**Ans:** The 95% confidence interval for phi is given by: _(0.046, 0.124)_
+
+
+__(a)__ The residuals from the model have heavy tails. So, the residuals do not seem to be normally distributed.
+
+__(b)__ The ACF of residuals suggests some remaining auto-correlation as we have a lot of lags with significant auto-correlation.
+
+__(c)__ The theoretical and sample ACF plots look quite similar to each other.
+
+__(d)__ Box-Test suggests evidence of remaining auto-correlation at few lags as we are rejecting the null in both cases.
+
+__(e)__ AIC for _AR(1) model=_**-17406.37** and _AR(2) model=_ **-17404.87** 
+
+## Question 2
+```{r}
+holdfit1 <- auto.arima(crsp, max.p=20, max.q=0, approximation = TRUE)
+print(holdfit1)
+
+holdfit2 <- auto.arima(crsp, max.p=20, max.q=0, approximation = FALSE)
+print(holdfit2)
+
+```
+
+The AIC of the model fit by inspection matches to that fit by the function auto.arima(approximation=F) as both the models fit an AR(1) process.
+However, the model obtained by setting approximation=TRUE differs from the case in which we have set approximation as FALSE. The approximation algorithm fits an AR(2) model while the non-approximate algorithm fits an AR(1) model.

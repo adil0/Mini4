@@ -1,0 +1,212 @@
+---
+title: "TimeSeriesHW4"
+author: "Adil Hayat"
+date: "18 April 2017"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, include=FALSE}
+library(tseries)
+library(fGarch)
+suppressPackageStartupMessages(library(tseries))
+suppressPackageStartupMessages(library(forecast))
+```
+
+## Question 1
+```{r}
+suppressPackageStartupMessages(library(quantmod))
+data(Tbrate,package="Ecdat")
+# r = the 91-day treasury bill rate
+# y = the log of real GDP
+# pi = the inflation rate
+Tbill = Tbrate[,1]
+Del.Tbill = diff(Tbill)
+par(mfrow=c(2,2))
+plot(Tbill, main = "T-Bill Rate")
+acf(Tbill, main = "ACF of T-Bill")
+plot(Del.Tbill, main="Del T-Bill")
+acf(Del.Tbill, "ACF of Del T-Bill")
+adf.test(Tbill)
+adf.test(Del.Tbill)
+kpss.test(Tbill)
+kpss.test(Del.Tbill)
+```
+
+**Problem 1**
+_Plot both Tbill and Del.Tbill. Use both time series and ACF plots. Also, perform ADF and KPSS tests on both series. Which series do you think are stationary? Why? What types of heteroskedasticity can you see in the Del.Tbill series?_
+
+The Del.Tbill is stationary. We reject the null hypothesis in favour of stationarity in the adf test. The KPSS test also confirms that the time series is stationary since we fail to reject the null that the time series _Del T-Bill_ is stationary.
+We observe that there is locality in variance in series(periods of high volatility are followed by same and vice-versa).
+
+## Problem 2
+```{r}
+garch.model.Del.Tbill = garchFit(formula= ~arma(1,0) + garch(1,0), 
+                        Del.Tbill, trace = FALSE)
+summary(garch.model.Del.Tbill)
+garch.model.Del.Tbill@fit$matcoef
+```
+
+**Problem 2** 
+_(a) Which ARMA/GARCH model is being fit? Write down the model using the same parameter names as in the R output._
+We are fitting an ARMA(1,0) model and GARCH(1,0) model for the differenced T-bill.
+_(b) What are the estimates of each of the parameters in the model?_
+The paramters and their estimates are as follows:
+**mu = 0.0835**
+**phi1 = 0.2416**
+**omega = 0.3381**
+**alpha1 = 0.8348**
+
+
+```{r}
+res = residuals(garch.model.Del.Tbill)
+res_std = res / garch.model.Del.Tbill@sigma.t
+par(mfrow=c(2,3))
+plot(res)
+acf(res)
+acf(res^2)
+plot(res_std)
+acf(res_std)
+acf(res_std^2)
+```
+
+**Problem 3**
+_(a) Describe what is plotted by acf(res). What, if anything,does the plot tell you about the fit of the model?_
+
+The acf plot plots the autocorrelation between the residuals from the ARMA(1,0) model. There doesn't seem to be significant auto-correlation among the residuals suggesting that the ARMA model is a good fit for the data.
+
+_(b) Describe what is plotted by acf(res^2). What, if anything, does the plot tell you about the fit of the model?_
+
+The acf of the raw residuals squared gives us an indication of the fact whether the model is adequate for modelling the time-varying variance component. It suggests the we need to fit a GARCH component in our ARMA model as well.
+
+_(c) Describe what is plotted by acf(resstd^2). What, if anything, does the plot tell you about the fit of the model?_
+
+The standardized residuals give us the distribution of the white noise asuumed in the ARCH model. The acf of the resstd^2 lets us test whether the process is white noise or not given the model and access whether the model is a good fit for modelling the noise term($a_t$).
+
+_(d) What is contained in the the variable garch.model.Tbill@sigma.t?_
+
+The variable contains the estimate of the conditional standard deviation of the noise term $a_t$.
+
+_(e) Is there anything noteworthy in the plot produced by the code plot(resstd)?_
+
+The plot shows the variation of $\epsilon_t$ across time. It helps us gain an understanding of the distribution of $\epsilon_t$. We can infer that $\epsilon_t$ is not iid.
+
+
+```{r}
+del.log.tbill <- diff(log(Tbill))
+par(mfrow=c(1,2))
+plot(del.log.tbill, main= "Differenced log T-bill")
+acf(del.log.tbill, main="ACF of the differenced log T-bill")
+adf.test(del.log.tbill)
+
+holdfit <- auto.arima(log(Tbill), d=1, approximation = FALSE, step = FALSE, ic="aicc", seasonal = FALSE)
+print(holdfit)
+par(mfrow=c(1,2))
+acf(holdfit$residuals^2,main= "ACF of the residuals", na.action = na.omit)
+pacf(holdfit$residuals^2,main= "PACF of the residuals", na.action = na.omit)
+
+
+# fitting an arma(0,1) + garch(2,0) model
+garch.model.Del.Tbill = garchFit(formula= ~arma(0,1) + garch(2,0), 
+                                 del.log.tbill, trace = FALSE)
+summary(garch.model.Del.Tbill)
+garch.model.Del.Tbill@fit$matcoef
+
+# the residuals
+res_log_bill = residuals(garch.model.Del.Tbill)
+res_std_log_bill = res_log_bill / garch.model.Del.Tbill@sigma.t
+par(mfrow=c(2,3))
+plot(res_log_bill)
+acf(res_log_bill)
+acf(res_log_bill^2)
+plot(res_std_log_bill)
+acf(res_std_log_bill)
+acf(res_std_log_bill^2)
+
+
+par(mfrow=c(1,2))
+qqnorm(res_std_log_bill,main= "Q-Q plot of log diff T-bill")
+qqline(res_std_log_bill, col="red")
+
+qqnorm(res, main="Q-Q plot of diff T-bill")
+qqline(res, col="red")
+```
+
+**Problem 4**
+__Now find an ARMA/GARCH model for the series del.log.-tbill, which we will define as diff(log(Tbill)). Do you see any advantages of working with the differences of the logarithms of the T-bill rate, rather than with the difference of Tbill as was done earlier?__
+
+From the adf test on del.log.tbill, we can infer that the time series is stationary. Initially, we try to find the ARIMA model for the data by using the auto.arima. Observing the ACF/PACF of the residuals squared we fit a GARCH(2,0) model. So, our overall model is ARMA(0,1) + GARCH(2,0) for the differenced log series. Observing the standardized residuals we can say that the model is a good fit for the data.
+
+We observe that the standardized residuals have a better distribution than using just the differenced series as it has les fatter tails.
+
+
+## Question 2
+```{r, cache=TRUE}
+aic_df <- data.frame(matrix(nrow=3,ncol = 2))
+colnames(aic_df) <- c("Method", "AIC")
+aic_df$Method <- c("APARCH(1,1) Unrestricted Delta", "APARCH(1,1) delta=2", "GARCH(1,1)")
+# FORD = getSymbols("F", from ="1990-1-1", to="2012-12-31", auto.assign=F)
+# saving the FORD data
+# saveRDS(FORD, "FORDData.Rds")
+FORD <- readRDS("FORDData.Rds")
+logret = dailyReturn(Ad(FORD),type="log")
+# Part (a)
+# model with delta not restricted to 2
+fordfit1 = garchFit(~aparch(1,1), dat=logret, include.mean=F)
+res_std_ffit1 <- attributes(fordfit1)$residuals/fordfit1@sigma.t
+
+qqnorm(res_std_ffit1)
+qqline(res_std_ffit1, col="red")
+
+# Part (b)
+# model with delta not restricted to 2 but with standardized 
+# residuals being t-dist.
+fordfit2 = garchFit(~aparch(1,1), dat=logret, include.mean=F, 
+                    cond.dist = "std", trace = FALSE)
+sresids = residuals(fordfit2)/fordfit2@sigma.t
+# part (c)
+plot(sort(sresids),qstd(ppoints(length(sresids)),
+      nu=fordfit2@fit$matcoef[6,1]))
+abline(0,1, col="red")
+
+# model with delta restricted to 2 but with standardized 
+# residuals being t-dist.
+fordfit3 = garchFit(~aparch(1,1), dat=logret, include.mean=F,
+                    cond.dist = "std", trace = FALSE, delta=2,
+                    include.delta=FALSE)
+sresids = residuals(fordfit3)/fordfit3@sigma.t
+plot(sort(sresids),qstd(ppoints(length(sresids)),
+      nu=fordfit3@fit$matcoef[5,1]))
+abline(0,1, col="red")
+
+# GARCH(1,1) model
+fordfit4 = garchFit(~garch(1,1), dat=logret, include.mean=F, 
+                    cond.dist = "std", trace = FALSE)
+sresids = residuals(fordfit4)/fordfit4@sigma.t
+plot(sort(sresids),qstd(ppoints(length(sresids)),
+      nu=fordfit4@fit$matcoef[4,1]))
+abline(0,1, col="red")
+aic_df$AIC[1] <- attributes(fordfit2)$fit$ics[1]
+aic_df$AIC[2] <- attributes(fordfit3)$fit$ics[1]
+aic_df$AIC[3] <- attributes(fordfit4)$fit$ics[1]
+knitr::kable(aic_df)
+```
+
+_(a) Start by refitting the APARCH(1,1) model where $\delta$ is not restricted to be equal to two. Construct the normal probability plot of the standardized residuals for this model. Show the plot, and comment on the quality of the normal assumption._
+
+From the QQplot, We observe that the residuals from the APARCH(1,1) model with unrestricted delta has heavier tails than a standard Normal distribution.
+
+_(b) Refit the model using the standardized t distribution as the assumed distribution for the fit. Show the table of parameter estimates for this model. (Still fit an APARCH(1,1) model with $\delta$ not constrained to be equal to 2.)_
+
+_(c) Construct the relevant QQ plot for the fit from the previous question. Is there improvement in the quality of the fit?_
+
+From the QQplot, We observe that the residuals from the APARCH(1,1) model with unrestricted delta fits reasonably with the t-distribution with $\nu$=6, except in the lower tail.
+
+_(d) Now compare the AIC values for three models: The one fit in Question 2, another APARCH(1,1) model with $\delta$ fixed at 2, and a GARCH(1,1) model._
+
+The APARCH(1,1) model with $\delta$=2 has the lowest AIC and seems to fit the data best.
